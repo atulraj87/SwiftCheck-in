@@ -1,0 +1,89 @@
+export type IdValidationResult = { ok: boolean; message?: string; extractedText?: string };
+
+async function fileToCanvas(file: File): Promise<HTMLCanvasElement> {
+  const isPdf = file.type === "application/pdf";
+  if (isPdf) {
+    const pdfjs: any = await import("pdfjs-dist");
+    // Worker optional for this small demo
+    pdfjs.GlobalWorkerOptions = pdfjs.GlobalWorkerOptions || {};
+    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+      pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+    }
+    const arrayBuf = await file.arrayBuffer();
+    const doc = await pdfjs.getDocument({ data: arrayBuf }).promise;
+    const page = await doc.getPage(1);
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d")!;
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return canvas;
+  } else {
+    const imgUrl = URL.createObjectURL(file);
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = (e) => reject(e);
+      i.src = imgUrl;
+    });
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d")!;
+    const maxDim = 1600;
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    canvas.width = Math.floor(img.width * scale);
+    canvas.height = Math.floor(img.height * scale);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+}
+
+export async function ocrTextFromFile(file: File): Promise<string> {
+  const { createWorker } = await import("tesseract.js");
+  const canvas = await fileToCanvas(file);
+  const worker = await createWorker("eng", 1, { logger: () => {} });
+  const { data } = await worker.recognize(canvas);
+  await worker.terminate();
+  return (data.text || "").toUpperCase();
+}
+
+export async function validateIdContent(file: File, idType: string): Promise<IdValidationResult> {
+  const text = await ocrTextFromFile(file);
+  const hasMrz = /P</.test(text) && /<{5,}/.test(text);
+  const hasAadhaar = /\b\d{4}\s?\d{4}\s?\d{4}\b/.test(text);
+  const hasEmiratesId = /\b784-\d{4}-\d{7}-\d\b/.test(text);
+  const hasDriverWords = /\bDRIVER\b|\bLICENCE\b|\bLICENSE\b/.test(text);
+  const hasStateId = /\bSTATE\b.*\bID\b|\bID\b.*\bSTATE\b/.test(text);
+  const hasBrp = /\bRESIDENCE PERMIT\b|\bBRP\b/.test(text);
+
+  let ok = false;
+  switch (idType) {
+    case "Passport":
+      ok = hasMrz;
+      break;
+    case "Aadhaar":
+      ok = hasAadhaar;
+      break;
+    case "Emirates ID":
+      ok = hasEmiratesId;
+      break;
+    case "Driving Licence":
+    case "Driver License":
+      ok = hasDriverWords;
+      break;
+    case "State ID":
+      ok = hasStateId;
+      break;
+    case "BRP":
+      ok = hasBrp;
+      break;
+    default:
+      ok = false;
+  }
+
+  return ok
+    ? { ok: true, extractedText: text }
+    : { ok: false, message: `The uploaded file does not look like a valid ${idType}.` };
+}
+
+
