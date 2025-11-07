@@ -3,7 +3,7 @@
 import { Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function BookingEmailDemo() {
+export default function BookingEmailPage() {
   return (
     <Suspense fallback={<div className="p-6 text-sm text-zinc-600">Loading...</div>}>
       <Content />
@@ -14,10 +14,11 @@ export default function BookingEmailDemo() {
 function Content() {
   const params = useSearchParams();
   const data = useMemo(() => {
-    // defaults for demo; can be overridden via query params
     const name = params.get("name") ?? "Jane Doe";
     const ref = params.get("ref") ?? "ABC1234";
-    const arrival = params.get("arrival") ?? new Date().toISOString().slice(0, 10);
+    const nextDay = new Date();
+    nextDay.setDate(nextDay.getDate() + 1);
+    const arrival = params.get("arrival") ?? nextDay.toISOString().slice(0, 10);
     const nights = params.get("nights") ?? "2";
     const room = params.get("room") ?? "Deluxe King";
     const guests = params.get("guests") ?? "2";
@@ -115,7 +116,6 @@ function Content() {
           <p className="mt-4 text-xs text-zinc-500">
             Questions? Contact us at <span className="font-medium">+1 (555) 123-4567</span> or <span className="font-medium">guestservices@novatal.com</span>
           </p>
-          <p className="mt-2 text-xs text-zinc-400">This is a demo email preview. Powered by SwiftCheckin.</p>
         </div>
       </main>
     </div>

@@ -3,7 +3,7 @@
 import { Suspense, useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function WhatsAppMessageDemo() {
+export default function WhatsAppMessagePage() {
   return (
     <Suspense fallback={<div className="p-6 text-sm text-zinc-600">Loading...</div>}>
       <Content />
@@ -24,7 +24,9 @@ function Content() {
   const data = useMemo(() => {
     const name = params.get("name") ?? "Jane Doe";
     const ref = params.get("ref") ?? "ABC1234";
-    const arrival = params.get("arrival") ?? new Date().toISOString().slice(0, 10);
+    const nextDay = new Date();
+    nextDay.setDate(nextDay.getDate() + 1);
+    const arrival = params.get("arrival") ?? nextDay.toISOString().slice(0, 10);
     const country = params.get("country") ?? "India";
     const email = params.get("email") ?? "jane@example.com";
     const phone = params.get("phone") ?? "+91 90000 00000";

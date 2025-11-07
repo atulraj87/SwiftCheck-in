@@ -58,7 +58,7 @@ function Content() {
               <dd className="text-base font-medium">{arrival}</dd>
             </div>
             <div>
-              <dt className="text-sm text-zinc-600">ID Upload (demo)</dt>
+              <dt className="text-sm text-zinc-600">ID Upload</dt>
               <dd className="text-base font-medium">{maskedSummary ? maskedSummary : uploaded ? uploaded : "Provided"}</dd>
             </div>
           </dl>
@@ -69,7 +69,7 @@ function Content() {
               <div className="mt-3 flex items-center justify-center rounded-md bg-white p-4">
                 <QRCode value={qrValue} size={160} includeMargin={true} level="M" />
               </div>
-              <p className="mt-2 text-xs text-zinc-600">Contains booking ref, name, and arrival. Demo only.</p>
+              <p className="mt-2 text-xs text-zinc-600">Contains booking reference, name, and arrival information.</p>
             </div>
           </div>
 
@@ -82,7 +82,7 @@ function Content() {
             </button>
             <div className="text-right">
               <p className="text-sm text-zinc-600">Show this confirmation at reception.</p>
-              <p className="text-xs text-zinc-500">{sendStatus ? "Confirmation sent to your email/WhatsApp (demo)." : "A masked copy of your ID is securely shared with the hotel (demo)."}</p>
+              <p className="text-xs text-zinc-500">{sendStatus ? "Confirmation sent to your email/WhatsApp." : "A masked copy of your ID is securely shared with the hotel."}</p>
               <button
                 className="mt-2 inline-flex items-center rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100"
                 onClick={() => navigator.clipboard.writeText(qrValue)}
@@ -93,7 +93,7 @@ function Content() {
           </div>
         </div>
 
-        <p className="mt-6 text-center text-xs text-zinc-600">Demo only — no data is uploaded to a server.</p>
+        <p className="mt-6 text-center text-xs text-zinc-600">No data is uploaded to a server.</p>
       </main>
     </div>
   );

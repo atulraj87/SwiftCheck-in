@@ -35,19 +35,22 @@ function Content() {
   const [showCamera, setShowCamera] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isPrefilled = params.get("prefill") === "1";
+  const [emailError, setEmailError] = useState<string>("");
+  const [phoneError, setPhoneError] = useState<string>("");
+  const lockedInputClass = isPrefilled ? "bg-zinc-100 cursor-not-allowed text-zinc-700" : "";
 
   const today = new Date().toISOString().split("T")[0];
 
   useEffect(() => {
-    if (params.get("prefill") === "1") {
-      setFullName(params.get("name") ?? "");
-      setBookingRef(params.get("ref") ?? "");
-      setArrival(params.get("arrival") ?? "");
-      setEmail(params.get("email") ?? "");
-      setPhone(params.get("phone") ?? "");
-      setCountry(params.get("country") ?? "");
-    }
-  }, [params]);
+    if (!isPrefilled) return;
+    setFullName(params.get("name") ?? "");
+    setBookingRef(params.get("ref") ?? "");
+    setArrival(params.get("arrival") ?? "");
+    setEmail(params.get("email") ?? "");
+    setPhone(params.get("phone") ?? "");
+    setCountry(params.get("country") ?? "");
+  }, [isPrefilled, params]);
 
   const countryToIdTypes: Record<string, string[]> = {
     India: ["Aadhaar", "Passport", "Driving Licence"],
@@ -71,6 +74,72 @@ function Content() {
     sessionStorage.removeItem("maskedIdSummary");
   }
 
+  function validateEmailFormat(value: string): boolean {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+  }
+
+  function validatePhoneNumber(value: string, selectedCountry: string): { ok: boolean; message?: string } {
+    const digitsOnly = value.replace(/\D/g, "");
+    if (!digitsOnly) {
+      return { ok: false, message: "Enter a valid phone number." };
+    }
+
+    const invalid = (message: string) => ({ ok: false, message });
+    let normalized = digitsOnly;
+
+    switch (selectedCountry) {
+      case "India": {
+        if (normalized.startsWith("91") && normalized.length === 12) {
+          normalized = normalized.slice(2);
+        } else if (normalized.startsWith("0") && normalized.length === 11) {
+          normalized = normalized.slice(1);
+        }
+        if (normalized.length === 10 && /^[6-9]/.test(normalized)) {
+          return { ok: true };
+        }
+        return invalid("Enter a valid Indian mobile number (10 digits, starting with 6-9).");
+      }
+      case "USA": {
+        if (normalized.startsWith("1") && normalized.length === 11) {
+          normalized = normalized.slice(1);
+        }
+        if (normalized.length === 10) {
+          return { ok: true };
+        }
+        return invalid("Enter a valid US phone number (10 digits).");
+      }
+      case "UAE": {
+        if (normalized.startsWith("971") && normalized.length >= 11) {
+          normalized = normalized.slice(3);
+        }
+        if (normalized.length === 9 && normalized.startsWith("5")) {
+          return { ok: true };
+        }
+        return invalid("Enter a valid UAE mobile number (9 digits, starting with 5).");
+      }
+      case "UK": {
+        if (normalized.startsWith("44") && normalized.length >= 12) {
+          normalized = normalized.slice(2);
+        }
+        if (normalized.startsWith("0") && normalized.length >= 10) {
+          normalized = normalized.slice(1);
+        }
+        if (normalized.length >= 10 && normalized.length <= 11) {
+          return { ok: true };
+        }
+        return invalid("Enter a valid UK phone number (10-11 digits).");
+      }
+      default: {
+        if (normalized.length >= 7) {
+          return { ok: true };
+        }
+        return invalid("Enter a valid phone number.");
+      }
+    }
+  }
+
   async function processSelectedFile(selected: File | null) {
     if (!selected) return;
     if (!idType) {
@@ -88,26 +157,19 @@ function Content() {
     try {
       const validation = await validateIdContent(selected, idType);
       if (!validation.ok) {
-        setFileError(validation.message || "The file content does not match the selected ID type. For demo, you can still proceed.");
-        // For demo: allow proceeding even if validation fails, but still create masked preview
-        try {
-          const masked = await createMaskedPreview(selected, idType, undefined);
-          setFile(selected);
-          setMaskedPreview(masked.dataUrl);
-          setMaskedSummary(masked.summary ?? "ID captured (validation skipped for demo)");
-          sessionStorage.setItem("uploadedIdName", selected.name);
-          sessionStorage.setItem("maskedIdPreview", masked.dataUrl);
-          sessionStorage.setItem("maskedIdSummary", masked.summary ?? "ID captured");
-          setShowCamera(false);
-          setIsProcessing(false);
-          return;
-        } catch (maskError) {
-          console.error(maskError);
-          setFileError("Could not process the document. Please try a clearer scan or PDF.");
-          resetIdArtifacts();
-          setIsProcessing(false);
-          return;
+        const message = validation.message || `The uploaded file does not match ${idType}. Please upload the correct document.`;
+        setFileError(message);
+        setFile(null);
+        setMaskedPreview("");
+        setMaskedSummary("");
+        sessionStorage.removeItem("uploadedIdName");
+        sessionStorage.removeItem("maskedIdPreview");
+        sessionStorage.removeItem("maskedIdSummary");
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
         }
+        setShowCamera(false);
+        return;
       }
       const masked = await createMaskedPreview(selected, idType, validation.extractedText);
       setFile(selected);
@@ -128,6 +190,25 @@ function Content() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    const trimmedEmail = email.trim();
+    if (trimmedEmail !== email) {
+      setEmail(trimmedEmail);
+    }
+
+    if (!validateEmailFormat(trimmedEmail)) {
+      setEmailError("Enter a valid email address.");
+      return;
+    }
+    setEmailError("");
+
+    const phoneCheck = validatePhoneNumber(phone, country);
+    if (!phoneCheck.ok) {
+      setPhoneError(phoneCheck.message || "Enter a valid phone number.");
+      return;
+    }
+    setPhoneError("");
+
     if (!agree) {
       alert("Please accept the policies to continue.");
       return;
@@ -152,20 +233,20 @@ function Content() {
         name: fullName,
         ref: bookingRef,
         arrival,
-        email,
+        email: trimmedEmail,
         phone,
         country,
         idType,
         maskedPreview,
         maskedSummary,
         uploadedIdName: file.name,
-        status: "submitted",
+        status: "Booked",
         createdAt: new Date().toISOString(),
       });
       localStorage.setItem("demoEntries", JSON.stringify(entries));
       localStorage.setItem("demoSendStatus", JSON.stringify({ sentEmail: true, sentWhatsApp: true }));
     } catch {
-      // demo-only storage errors can be ignored
+      // storage errors can be ignored
     }
 
     router.push(`/confirmation?${searchParams.toString()}`);
@@ -174,7 +255,7 @@ function Content() {
   return (
     <div className="min-h-screen bg-[#D9DED7] text-zinc-900">
       <header className="mx-auto w-full max-w-3xl px-6 py-10">
-        <h1 className="text-3xl font-semibold tracking-tight">Hotel Pre-Check-In (Demo)</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Hotel Pre-Check-In</h1>
         <p className="mt-2 text-sm text-zinc-700">Skip the desk. Finish essentials before you arrive.</p>
         <ol className="mt-4 flex flex-wrap items-center gap-2 text-xs text-zinc-700">
           <li className={`rounded-full px-2 py-1 ${fullName && email && phone && bookingRef && arrival && country ? "bg-zinc-900 text-white" : "bg-zinc-400/60"}`}>1 • Details</li>
@@ -197,7 +278,9 @@ function Content() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Jane Doe"
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-900"
+                  readOnly={isPrefilled}
+                  aria-readonly={isPrefilled}
+                  className={`mt-1 w-full rounded-md border px-3 py-2 outline-none focus:ring-2 border-zinc-300 focus:ring-zinc-900 ${lockedInputClass}`}
                 />
               </div>
               <div>
@@ -206,10 +289,23 @@ function Content() {
                   type="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (emailError) {
+                      setEmailError("");
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!email) return;
+                    setEmailError(validateEmailFormat(email) ? "" : "Enter a valid email address.");
+                  }}
                   placeholder="jane@example.com"
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-900"
+                  readOnly={isPrefilled}
+                  aria-readonly={isPrefilled}
+                  aria-invalid={!!emailError}
+                  className={`mt-1 w-full rounded-md border px-3 py-2 outline-none focus:ring-2 ${emailError ? "border-red-500 focus:ring-red-500" : "border-zinc-300 focus:ring-zinc-900"} ${lockedInputClass}`}
                 />
+                {emailError && <p className="mt-1 text-xs text-red-600">{emailError}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium">Phone</label>
@@ -217,10 +313,24 @@ function Content() {
                   type="tel"
                   required
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    if (phoneError) {
+                      setPhoneError("");
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!phone) return;
+                    const validation = validatePhoneNumber(phone, country);
+                    setPhoneError(validation.ok ? "" : validation.message || "Enter a valid phone number.");
+                  }}
                   placeholder="+1 555 123 4567"
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-900"
+                  readOnly={isPrefilled}
+                  aria-readonly={isPrefilled}
+                  aria-invalid={!!phoneError}
+                  className={`mt-1 w-full rounded-md border px-3 py-2 outline-none focus:ring-2 ${phoneError ? "border-red-500 focus:ring-red-500" : "border-zinc-300 focus:ring-zinc-900"} ${lockedInputClass}`}
                 />
+                {phoneError && <p className="mt-1 text-xs text-red-600">{phoneError}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium">Booking reference</label>
@@ -230,7 +340,9 @@ function Content() {
                   value={bookingRef}
                   onChange={(e) => setBookingRef(e.target.value)}
                   placeholder="ABC1234"
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-900"
+                  readOnly={isPrefilled}
+                  aria-readonly={isPrefilled}
+                  className={`mt-1 w-full rounded-md border px-3 py-2 outline-none focus:ring-2 border-zinc-300 focus:ring-zinc-900 ${lockedInputClass}`}
                 />
               </div>
               <div>
@@ -241,7 +353,8 @@ function Content() {
                   min={today}
                   value={arrival}
                   onChange={(e) => setArrival(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-900"
+                  className={`mt-1 w-full rounded-md border px-3 py-2 outline-none focus:ring-2 border-zinc-300 focus:ring-zinc-900 ${isPrefilled ? "bg-zinc-100 cursor-not-allowed text-zinc-700" : ""}`}
+                  disabled={isPrefilled}
                 />
               </div>
               <div>
@@ -250,11 +363,19 @@ function Content() {
                   required
                   value={country}
                   onChange={(e) => {
-                    setCountry(e.target.value);
+                    const value = e.target.value;
+                    setCountry(value);
                     setIdType("");
                     resetIdArtifacts();
+                    if (phone) {
+                      const validation = validatePhoneNumber(phone, value);
+                      setPhoneError(validation.ok ? "" : validation.message || "Enter a valid phone number.");
+                    } else {
+                      setPhoneError("");
+                    }
                   }}
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-900"
+                  className={`mt-1 w-full rounded-md border px-3 py-2 outline-none focus:ring-2 border-zinc-300 focus:ring-zinc-900 ${isPrefilled ? "bg-zinc-100 cursor-not-allowed text-zinc-700" : ""}`}
+                  disabled={isPrefilled}
                 >
                   <option value="" disabled>
                     Select country
@@ -354,7 +475,7 @@ function Content() {
           </section>
 
           <section className="mt-8">
-            <h2 className="text-lg font-medium">Upload ID (demo)</h2>
+            <h2 className="text-lg font-medium">Upload ID</h2>
             <p className="mt-1 text-sm text-zinc-600">Select an acceptable ID type and upload or capture it. Only the masked copy is stored.</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <div>
@@ -434,8 +555,8 @@ function Content() {
                   {maskedSummary
                     ? `Masking applied: ${maskedSummary}`
                     : "Sensitive details automatically masked. Only this copy is shared with the hotel."}
-          </p>
-        </div>
+                </p>
+              </div>
             )}
           </section>
 
@@ -453,7 +574,9 @@ function Content() {
                 !country ||
                 !idType ||
                 !maskedPreview ||
-                !agree
+                !agree ||
+                !!emailError ||
+                !!phoneError
               }
             >
               {isProcessing ? "Processing..." : "Submit & Get Confirmation"}
@@ -462,7 +585,7 @@ function Content() {
         </form>
 
         <p className="mt-6 text-center text-xs text-zinc-500">
-          Demo only — original IDs never leave your browser. A masked copy is securely shared with the hotel.
+          Original IDs never leave your browser. A masked copy is securely shared with the hotel.
         </p>
       </main>
     </div>

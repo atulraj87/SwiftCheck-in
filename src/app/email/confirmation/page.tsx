@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { QRCodeCanvas as QRCode } from "qrcode.react";
 
-export default function ConfirmationEmailDemo() {
+export default function ConfirmationEmailPage() {
   return (
     <Suspense fallback={<div className="p-6 text-sm text-zinc-600">Loading...</div>}>
       <Content />
@@ -84,7 +84,7 @@ function Content() {
             </ul>
           </div>
 
-          <p className="mt-4 text-xs text-zinc-500">This is a demo email preview rendered as a web page.</p>
+          <p className="mt-4 text-xs text-zinc-500">This is an email preview rendered as a web page.</p>
         </div>
       </main>
     </div>

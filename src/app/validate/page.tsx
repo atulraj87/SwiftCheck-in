@@ -8,6 +8,9 @@ type Entry = {
   name: string;
   ref: string;
   arrival: string;
+  email?: string;
+  phone?: string;
+  country?: string;
   uploadedIdName: string | null;
   idType?: string;
   maskedPreview?: string;
@@ -72,11 +75,11 @@ function ValidateContent() {
           const { sig, ...rest } = parsed as any;
           const recomputed = await hmacHex(JSON.stringify(rest), "demo-secret");
           if (recomputed !== sig) {
-            setResult({ ok: false, message: "QR signature invalid (demo)." });
+            setResult({ ok: false, message: "QR signature invalid." });
             return;
           }
           const match = entries.find((e) => e.ref === (parsed as any).ref && e.arrival === (parsed as any).arrival);
-          setResult(match ? { ok: true, message: "Booking found and validated.", match } : { ok: false, message: "No matching booking found in demo dashboard." });
+          setResult(match ? { ok: true, message: "Booking found and validated.", match } : { ok: false, message: "No matching booking found in the dashboard." });
         });
         return;
       }
@@ -87,16 +90,52 @@ function ValidateContent() {
     if (match) {
       setResult({ ok: true, message: "Booking found and validated.", match });
     } else {
-      setResult({ ok: false, message: "No matching booking found in demo dashboard." });
+      setResult({ ok: false, message: "No matching booking found in the dashboard." });
+    }
+  }
+
+  function handleApprove() {
+    if (!result?.match) return;
+    const updated = entries.map((entry) =>
+      entry.ref === result.match!.ref ? { ...entry, status: "Checked-in" } : entry
+    );
+    setEntries(updated);
+    try {
+      localStorage.setItem("demoEntries", JSON.stringify(updated));
+    } catch {
+      // ignore storage errors
+    }
+    // Update the result to reflect the new status
+    const updatedMatch = updated.find((e) => e.ref === result.match!.ref);
+    if (updatedMatch) {
+      setResult({ ...result, match: updatedMatch });
+    }
+  }
+
+  function handleReject() {
+    if (!result?.match) return;
+    const updated = entries.map((entry) =>
+      entry.ref === result.match!.ref ? { ...entry, status: "Pending" } : entry
+    );
+    setEntries(updated);
+    try {
+      localStorage.setItem("demoEntries", JSON.stringify(updated));
+    } catch {
+      // ignore storage errors
+    }
+    // Update the result to reflect the new status
+    const updatedMatch = updated.find((e) => e.ref === result.match!.ref);
+    if (updatedMatch) {
+      setResult({ ...result, match: updatedMatch });
     }
   }
 
   return (
     <div className="min-h-screen bg-[#D9DED7] text-zinc-900">
       <header className="mx-auto w-full max-w-3xl px-6 py-10">
-        <h1 className="text-3xl font-semibold tracking-tight">QR Validator (Demo)</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">QR Validator</h1>
         <p className="mt-2 text-sm text-zinc-700">
-          {targetRef ? `Target booking ref: ${targetRef}` : "Paste the scanned QR payload to validate against demo entries."}
+          {targetRef ? `Target booking ref: ${targetRef}` : "Paste the scanned QR payload to validate against stored entries."}
         </p>
         {targeted && (
           <div className="mt-3 rounded-lg border border-zinc-200 bg-white p-3 text-sm">
@@ -143,23 +182,110 @@ function ValidateContent() {
           </div>
 
           {result && (
-            <div className={`mt-4 rounded-md border p-3 text-sm ${result.ok ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}>
-              <p className="font-medium">{result.message}</p>
+            <div className={`mt-4 rounded-md border p-4 text-sm ${result.ok ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}>
+              <p className="font-medium text-base">{result.message}</p>
               {result.ok && result.match && (
-                <div className="mt-2 space-y-3">
-                  <ul className="grid grid-cols-2 gap-2">
-                    <li><span className="text-zinc-600">Guest:</span> {result.match.name}</li>
-                    <li><span className="text-zinc-600">Ref:</span> {result.match.ref}</li>
-                    <li><span className="text-zinc-600">Arrival:</span> {result.match.arrival}</li>
-                    <li><span className="text-zinc-600">Status:</span> {result.match.status}</li>
-                  </ul>
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <h3 className="text-base font-semibold mb-3">Complete Booking Details</h3>
+                    <div className="grid grid-cols-2 gap-4 bg-white rounded-lg border border-zinc-200 p-4">
+                      <div>
+                        <span className="text-zinc-600 text-sm">Guest Name:</span>
+                        <p className="font-medium mt-1">{result.match.name}</p>
+                      </div>
+                      <div>
+                        <span className="text-zinc-600 text-sm">Booking Reference:</span>
+                        <p className="font-medium mt-1">{result.match.ref}</p>
+                      </div>
+                      <div>
+                        <span className="text-zinc-600 text-sm">Arrival Date:</span>
+                        <p className="font-medium mt-1">{result.match.arrival}</p>
+                      </div>
+                      <div>
+                        <span className="text-zinc-600 text-sm">Status:</span>
+                        <p className="mt-1">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                            result.match.status === "Checked-in" || result.match.status === "approved" 
+                              ? "bg-emerald-100 text-emerald-700" 
+                              : result.match.status === "Pending" || result.match.status === "submitted"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : result.match.status === "Rejected" || result.match.status === "Cancelled" || result.match.status === "No-show"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-zinc-900 text-white"
+                          }`}>
+                            {result.match.status}
+                          </span>
+                        </p>
+                      </div>
+                      {result.match.email && (
+                        <div>
+                          <span className="text-zinc-600 text-sm">Email:</span>
+                          <p className="font-medium mt-1">{result.match.email}</p>
+                        </div>
+                      )}
+                      {result.match.phone && (
+                        <div>
+                          <span className="text-zinc-600 text-sm">Phone:</span>
+                          <p className="font-medium mt-1">{result.match.phone}</p>
+                        </div>
+                      )}
+                      {result.match.country && (
+                        <div>
+                          <span className="text-zinc-600 text-sm">Country:</span>
+                          <p className="font-medium mt-1">{result.match.country}</p>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-zinc-600 text-sm">Created:</span>
+                        <p className="font-medium mt-1">{new Date(result.match.createdAt).toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+
                   {result.match.maskedSummary && result.match.idType && (
-                    <div className="rounded border border-zinc-200 bg-white p-2 text-sm">
-                      <span className="text-zinc-700">
-                        {result.match.idType}: {result.match.maskedSummary}
-                      </span>
+                    <div className="rounded-lg border border-zinc-200 bg-white p-4">
+                      <h4 className="font-semibold mb-2">ID Verification</h4>
+                      <div className="space-y-2">
+                        <div>
+                          <span className="text-zinc-600 text-sm">ID Type:</span>
+                          <p className="font-medium mt-1">{result.match.idType}</p>
+                        </div>
+                        <div>
+                          <span className="text-zinc-600 text-sm">Masked ID Number:</span>
+                          <p className="font-medium mt-1">{result.match.maskedSummary}</p>
+                        </div>
+                        {result.match.maskedPreview && (
+                          <div className="mt-3">
+                            <span className="text-zinc-600 text-sm block mb-2">Masked ID Preview:</span>
+                            <div className="rounded border border-zinc-200 bg-zinc-50 p-2">
+                              <img
+                                src={result.match.maskedPreview}
+                                alt={`Masked ID for ${result.match.name}`}
+                                className="w-full max-w-md mx-auto rounded object-contain"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={handleApprove}
+                      className="flex-1 rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                      disabled={result.match.status === "Checked-in"}
+                    >
+                      ✓ Approve & Check-in
+                    </button>
+                    <button
+                      onClick={handleReject}
+                      className="flex-1 rounded-md bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                      disabled={result.match.status === "Pending"}
+                    >
+                      ✗ Reject (Set to Pending)
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
