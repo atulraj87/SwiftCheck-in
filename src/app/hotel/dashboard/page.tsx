@@ -176,20 +176,6 @@ export default function HotelDashboardPage() {
                       >
                         Validate
                       </Link>
-                      <button
-                        type="button"
-                        className={`ml-3 text-sm ${e.status === "approved" ? "cursor-default text-zinc-400" : "text-green-700 underline"}`}
-                        onClick={() => {
-                          if (e.status === "approved") return;
-                          const updated = entries.map((entry) =>
-                            entry.ref === e.ref ? { ...entry, status: "approved" } : entry
-                          );
-                          persist(updated);
-                        }}
-                        disabled={e.status === "approved"}
-                      >
-                        {e.status === "approved" ? "Approved" : "Approve"}
-                      </button>
                     </td>
                   </tr>
                 ))}

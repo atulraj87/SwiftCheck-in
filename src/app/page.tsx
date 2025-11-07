@@ -842,25 +842,35 @@ async function createMaskedPreview(file: File, idType: string, extractedText?: s
   const idNumberInfo = extractIdNumber(idType, extractedText);
 
   // Mask the ID number area (typically in center/middle area of ID card)
-  // For Aadhaar-style masking: mask the number area and show masked version
+  // For Aadhaar-style masking: mask the number area and show masked version matching reference format
   if (idNumberInfo && idType === "Aadhaar") {
-    // Aadhaar number is typically in the center area
+    // Aadhaar number appears in multiple places - mask all occurrences
+    // Primary masking area (center/top area where number is prominently displayed)
     const maskX = canvas.width * 0.15;
-    const maskY = canvas.height * 0.4;
+    const maskY = canvas.height * 0.35;
     const maskWidth = canvas.width * 0.7;
-    const maskHeight = canvas.height * 0.12;
+    const maskHeight = canvas.height * 0.15;
     
     // Draw white background over the number area
     ctx.fillStyle = "#FFFFFF";
     ctx.fillRect(maskX, maskY, maskWidth, maskHeight);
     
-    // Draw the masked number (XXXX XXXX last4)
+    // Draw the masked number in exact format: "XXXX XXXX last4" (matching reference image)
     ctx.fillStyle = "#000000";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    const fontSize = Math.max(24, Math.round(canvas.width * 0.06));
+    const fontSize = Math.max(28, Math.round(canvas.width * 0.065));
     ctx.font = `bold ${fontSize}px "Segoe UI", Arial, sans-serif`;
     ctx.fillText(idNumberInfo.masked, canvas.width / 2, maskY + maskHeight / 2);
+    
+    // Also mask bottom area where Aadhaar number might appear again
+    const bottomMaskY = canvas.height * 0.75;
+    if (bottomMaskY < canvas.height - 100) {
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(maskX, bottomMaskY, maskWidth, maskHeight * 0.8);
+      ctx.fillStyle = "#000000";
+      ctx.fillText(idNumberInfo.masked, canvas.width / 2, bottomMaskY + (maskHeight * 0.4));
+    }
   } else if (idNumberInfo) {
     // For other ID types, mask the number area similarly
     const maskX = canvas.width * 0.15;

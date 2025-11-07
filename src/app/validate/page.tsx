@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import jsQR from "jsqr";
 
 type Entry = {
@@ -31,6 +31,7 @@ export default function ValidatePage() {
 
 function ValidateContent() {
   const params = useSearchParams();
+  const router = useRouter();
   const targetRef = params.get("ref") ?? "";
   const [input, setInput] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -153,10 +154,54 @@ function ValidateContent() {
         <div className="rounded-2xl border border-transparent bg-[#F3F1ED] p-6 shadow-sm">
           {showScanner && (
             <Scanner
-              onDecoded={(text) => {
+              onDecoded={async (text) => {
                 setInput(text);
                 setScanComplete(true);
                 setShowScanner(false);
+                // Auto-validate and navigate
+                try {
+                  const parsed = JSON.parse(text);
+                  
+                  // Load entries if not already loaded
+                  let currentEntries = entries;
+                  if (currentEntries.length === 0) {
+                    try {
+                      const raw = localStorage.getItem("demoEntries");
+                      currentEntries = raw ? JSON.parse(raw) : [];
+                    } catch {
+                      currentEntries = [];
+                    }
+                  }
+                  
+                  let match: Entry | undefined;
+                  
+                  // Handle signed QR codes
+                  if (parsed.sig) {
+                    const { hmacHex } = await import("@/lib/hmac");
+                    const { sig, ...rest } = parsed;
+                    const recomputed = await hmacHex(JSON.stringify(rest), "demo-secret");
+                    if (recomputed === sig) {
+                      match = currentEntries.find((e) => e.ref === rest.ref && e.arrival === rest.arrival);
+                      if (match) {
+                        router.push(`/hotel/booking/${encodeURIComponent(match.ref)}`);
+                        return;
+                      }
+                    }
+                  } else {
+                    // Simple validation
+                    match = currentEntries.find((e) => e.ref === parsed.ref && e.arrival === parsed.arrival);
+                    if (match) {
+                      router.push(`/hotel/booking/${encodeURIComponent(match.ref)}`);
+                      return;
+                    }
+                  }
+                  
+                  // If no match found, show error
+                  setResult({ ok: false, message: "No matching booking found in the dashboard." });
+                } catch {
+                  // Invalid QR
+                  setResult({ ok: false, message: "Invalid QR payload. Expecting JSON with ref, name, arrival." });
+                }
               }}
             />
           )}

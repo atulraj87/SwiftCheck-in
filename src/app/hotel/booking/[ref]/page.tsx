@@ -158,6 +158,18 @@ function Content() {
                 <p className="text-zinc-600 mt-3">Masked ID Number:</p>
                 <p className="font-medium mt-1">{entry.maskedSummary}</p>
               </div>
+              {entry.maskedPreview && (
+                <div className="mt-4">
+                  <p className="text-zinc-600 text-sm mb-2">Masked ID Preview:</p>
+                  <div className="rounded border border-zinc-200 bg-zinc-50 p-2">
+                    <img
+                      src={entry.maskedPreview}
+                      alt={`Masked ID for ${entry.name}`}
+                      className="w-full max-w-md mx-auto rounded object-contain"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
