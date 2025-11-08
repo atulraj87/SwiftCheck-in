@@ -47,6 +47,22 @@ function Content() {
     }
   }, [ref]);
 
+  function updateStatus(newStatus: string) {
+    setEntry((prev) => {
+      if (!prev) return prev;
+      const updatedEntry = { ...prev, status: newStatus };
+      try {
+        const raw = localStorage.getItem("demoEntries");
+        const entries: Entry[] = raw ? JSON.parse(raw) : [];
+        const next = entries.map((item) => (item.ref === ref ? { ...item, status: newStatus } : item));
+        localStorage.setItem("demoEntries", JSON.stringify(next));
+      } catch {
+        // ignore storage errors
+      }
+      return updatedEntry;
+    });
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#D9DED7] flex items-center justify-center">
@@ -93,6 +109,29 @@ function Content() {
 
       <main className="mx-auto mb-24 w-full max-w-3xl px-6">
         <div className="rounded-2xl border border-transparent bg-[#F3F1ED] p-6 shadow-sm">
+          <div className="flex gap-2 flex-wrap mb-6">
+            {[
+              { label: "Mark as Checked-in", value: "Checked-in" },
+              { label: "Mark as Pending", value: "Pending" },
+              { label: "Mark as Checked-out", value: "Checked-out" },
+              { label: "Mark as Cancelled", value: "Cancelled" },
+              { label: "Mark as No-show", value: "No-show" },
+              { label: "Mark as Paid", value: "Paid" },
+            ].map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => updateStatus(option.value)}
+                className={`inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium transition ${
+                  entry.status === option.value
+                    ? "border-zinc-900 bg-zinc-900 text-white"
+                    : "border-zinc-300 text-zinc-800 hover:bg-zinc-100"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           <div className="mb-6">
             <h2 className="text-lg font-medium mb-4">Guest Information</h2>
             <div className="grid grid-cols-2 gap-4 text-sm">
