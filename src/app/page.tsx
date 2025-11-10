@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import ReactCrop, { centerCrop, makeAspectCrop, type Crop, type PixelCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 import { validateIdContent, type OcrWord } from "@/lib/idValidation";
@@ -37,7 +37,9 @@ function Content() {
   const [maskedSummary, setMaskedSummary] = useState<string>("");
   const [showCamera, setShowCamera] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [cropModal, setCropModal] = useState<{ src: string; filename: string; mimeType: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cropNextFileRef = useRef<((file: File) => Promise<void> | void) | null>(null);
   const isPrefilled = params.get("prefill") === "1";
   const [emailError, setEmailError] = useState<string>("");
   const [phoneError, setPhoneError] = useState<string>("");
@@ -73,6 +75,8 @@ function Content() {
       setFileWarning("");
     }
     setShowCamera(false);
+    setCropModal(null);
+    cropNextFileRef.current = null;
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -147,7 +151,7 @@ function Content() {
     }
   }
 
-  async function processSelectedFile(selected: File | null) {
+  async function processSelectedFile(selected: File | null, options: { skipCrop?: boolean } = {}) {
     if (!selected) return;
     if (!idType) {
       setFileError("Select an ID type before uploading.");
@@ -158,6 +162,26 @@ function Content() {
       setFileError("Only JPG, PNG or PDF files are allowed.");
       setFileWarning("");
       resetIdArtifacts({ preserveMessages: true });
+      return;
+    }
+    const isImage = selected.type.startsWith("image/");
+    if (!options.skipCrop && isImage) {
+      try {
+        const dataUrl = await fileToDataUrl(selected);
+        cropNextFileRef.current = async (croppedFile: File) => {
+          cropNextFileRef.current = null;
+          await processSelectedFile(croppedFile, { skipCrop: true });
+        };
+        setCropModal({
+          src: dataUrl,
+          filename: selected.name,
+          mimeType: selected.type || "image/jpeg",
+        });
+      } catch (error) {
+        console.error(error);
+        setFileError("Could not open the image for cropping. Please try another file.");
+        resetIdArtifacts({ preserveMessages: true });
+      }
       return;
     }
     setFileError("");
@@ -438,51 +462,6 @@ function Content() {
                 </ul>
               </div>
             </div>
-            {bookingRef && (
-              <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-4">
-                <p className="text-sm font-medium text-zinc-900">📶 Your Wi-Fi credentials</p>
-                <div className="mt-2 rounded-md bg-zinc-50 px-3 py-2.5 font-mono text-xs">
-                  <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5">
-                    <span className="text-zinc-600">Network:</span>
-                    <span className="font-semibold text-zinc-900">NOVATAL-{bookingRef.slice(-4).padStart(4, "0")}</span>
-                  </div>
-                  <div className="mt-1.5 flex items-center justify-between">
-                    <span className="text-zinc-600">Password:</span>
-                    <span className="font-semibold text-zinc-900">{bookingRef.toUpperCase()}2024</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
-
-          <section className="mt-8">
-            <h2 className="text-lg font-medium">Quick support</h2>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border border-zinc-200 bg-white p-3 text-sm">
-                <p className="font-medium text-zinc-900">🔑 Lost or locked out?</p>
-                <p className="mt-2 text-xs font-medium text-zinc-900">Dial: <span className="font-mono">Ext. 101</span></p>
-              </div>
-              <div className="rounded-lg border border-zinc-200 bg-white p-3 text-sm">
-                <p className="font-medium text-zinc-900">🌡️ Room temperature issues?</p>
-                <p className="mt-2 text-xs font-medium text-zinc-900">Dial: <span className="font-mono">Ext. 205</span></p>
-              </div>
-              <div className="rounded-lg border border-zinc-200 bg-white p-3 text-sm">
-                <p className="font-medium text-zinc-900">📺 TV or remote not working?</p>
-                <p className="mt-2 text-xs font-medium text-zinc-900">Dial: <span className="font-mono">Ext. 205</span></p>
-              </div>
-              <div className="rounded-lg border border-zinc-200 bg-white p-3 text-sm">
-                <p className="font-medium text-zinc-900">🛏️ Extra towels or amenities?</p>
-                <p className="mt-2 text-xs font-medium text-zinc-900">Dial: <span className="font-mono">Ext. 301</span></p>
-              </div>
-              <div className="rounded-lg border border-zinc-200 bg-white p-3 text-sm">
-                <p className="font-medium text-zinc-900">🚪 Late checkout request?</p>
-                <p className="mt-2 text-xs font-medium text-zinc-900">Dial: <span className="font-mono">Ext. 101</span></p>
-              </div>
-              <div className="rounded-lg border border-zinc-200 bg-white p-3 text-sm">
-                <p className="font-medium text-zinc-900">🍽️ Room service or dining?</p>
-                <p className="mt-2 text-xs font-medium text-zinc-900">Dial: <span className="font-mono">Ext. 401</span></p>
-              </div>
-            </div>
           </section>
 
           <section className="mt-8">
@@ -549,7 +528,7 @@ function Content() {
             {showCamera && !isProcessing && (
               <CameraCapture
                 onCapture={async (captured) => {
-                  await processSelectedFile(captured);
+                  await processSelectedFile(captured, { skipCrop: true });
                   if (fileInputRef.current) {
                     fileInputRef.current.value = "";
                   }
@@ -600,6 +579,29 @@ function Content() {
           Original IDs never leave your browser. A masked copy is securely shared with the hotel.
         </p>
       </main>
+      {cropModal && (
+        <CropModal
+          src={cropModal.src}
+          filename={cropModal.filename}
+          mimeType={cropModal.mimeType}
+          onSave={async (file) => {
+            setCropModal(null);
+            const handler = cropNextFileRef.current;
+            cropNextFileRef.current = null;
+            if (handler) {
+              await handler(file);
+            }
+          }}
+          onCancel={() => {
+            cropNextFileRef.current = null;
+            setCropModal(null);
+            resetIdArtifacts({ preserveMessages: true });
+            if (fileInputRef.current) {
+              fileInputRef.current.value = "";
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -695,7 +697,7 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     stopStream();
   };
 
-  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+  const onImageLoad = (e: SyntheticEvent<HTMLImageElement>) => {
     const { naturalWidth: width, naturalHeight: height } = e.currentTarget;
     imageRef.current = e.currentTarget;
     const initialCrop = centerCrop(
@@ -721,7 +723,12 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     }
     setIsSaving(true);
     try {
-      const croppedFile = await generateCroppedFile(imageRef.current, completedCrop);
+      const croppedFile = await generateCroppedFile(
+        imageRef.current,
+        completedCrop,
+        "image/jpeg",
+        `captured-id-${Date.now()}.jpg`
+      );
       await onCapture(croppedFile);
       onClose();
     } catch (err) {
@@ -801,7 +808,120 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   );
 }
 
-async function generateCroppedFile(image: HTMLImageElement, crop: PixelCrop): Promise<File> {
+type CropModalProps = {
+  src: string;
+  filename: string;
+  mimeType: string;
+  onSave: (file: File) => Promise<void> | void;
+  onCancel: () => void;
+};
+
+function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps) {
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const [crop, setCrop] = useState<Crop>();
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
+  const [isSaving, setIsSaving] = useState(false);
+  const cropAspect = 3 / 2;
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const onImageLoad = (e: SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth: width, naturalHeight: height } = e.currentTarget;
+    imageRef.current = e.currentTarget;
+    const initialCrop = centerCrop(
+      makeAspectCrop(
+        {
+          unit: "%",
+          width: 90,
+        },
+        cropAspect,
+        width,
+        height
+      ),
+      width,
+      height
+    );
+    setCrop(initialCrop);
+    setCompletedCrop(initialCrop);
+  };
+
+  const handleSave = async () => {
+    if (!imageRef.current || !completedCrop || completedCrop.width <= 0 || completedCrop.height <= 0) {
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const croppedFile = await generateCroppedFile(
+        imageRef.current,
+        completedCrop,
+        mimeType || "image/jpeg",
+        deriveCroppedFilename(filename, mimeType)
+      );
+      await onSave(croppedFile);
+    } catch (error) {
+      console.error(error);
+      if (mountedRef.current) {
+        setIsSaving(false);
+      }
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-zinc-800">Adjust crop before uploading</p>
+          <button type="button" className="text-xs text-zinc-500 hover:text-zinc-800" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+        <div className="mt-3 space-y-3">
+          <ReactCrop crop={crop} onChange={(newCrop) => setCrop(newCrop)} onComplete={(c) => setCompletedCrop(c)} aspect={cropAspect} minHeight={80}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              ref={imageRef}
+              src={src}
+              alt="Crop selected ID"
+              className="max-h-[420px] w-full max-w-full rounded"
+              onLoad={onImageLoad}
+            />
+          </ReactCrop>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100"
+              onClick={onCancel}
+            >
+              Choose different photo
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center rounded-md bg-[#5E0F8B] px-4 py-2 text-sm font-medium text-white hover:bg-[#4A0B6E] disabled:cursor-not-allowed disabled:bg-zinc-400"
+              disabled={!completedCrop || isSaving}
+              onClick={handleSave}
+            >
+              {isSaving ? "Saving..." : "Save & Continue"}
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500">Drag the crop to cover the ID while keeping the photo and name visible.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+async function generateCroppedFile(
+  image: HTMLImageElement,
+  crop: PixelCrop,
+  mimeType = "image/jpeg",
+  filename?: string
+): Promise<File> {
   const scaleX = image.naturalWidth / image.width;
   const scaleY = image.naturalHeight / image.height;
   const canvas = document.createElement("canvas");
@@ -830,12 +950,55 @@ async function generateCroppedFile(image: HTMLImageElement, crop: PixelCrop): Pr
           reject(new Error("Could not create cropped image"));
           return;
         }
-        resolve(new File([blob], `captured-id-${Date.now()}.jpg`, { type: "image/jpeg" }));
+        const extension = mimeType === "image/png" ? "png" : "jpg";
+        const safeName =
+          filename ??
+          `cropped-id-${Date.now()}.${extension}`;
+        resolve(new File([blob], safeName, { type: mimeType }));
       },
-      "image/jpeg",
-      0.92
+      mimeType,
+      mimeType === "image/png" ? undefined : 0.92
     );
   });
+}
+
+async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Could not read file"));
+      }
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function deriveCroppedFilename(originalName: string, mimeType: string): string {
+  if (originalName) {
+    const dotIndex = originalName.lastIndexOf(".");
+    if (dotIndex > 0) {
+      const base = originalName.slice(0, dotIndex);
+      const ext = originalName.slice(dotIndex + 1) || mimeTypeToExtension(mimeType);
+      return `${base}-cropped.${ext}`;
+    }
+  }
+  return `cropped-id-${Date.now()}.${mimeTypeToExtension(mimeType)}`;
+}
+
+function mimeTypeToExtension(mimeType: string): string {
+  switch (mimeType) {
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    case "image/jpeg":
+    default:
+      return "jpg";
+  }
 }
 
 async function canvasFromFile(file: File): Promise<HTMLCanvasElement> {

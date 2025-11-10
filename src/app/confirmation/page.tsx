@@ -22,6 +22,16 @@ function Content() {
   const uploaded = typeof window !== "undefined" ? sessionStorage.getItem("uploadedIdName") : null;
   const maskedSummary = typeof window !== "undefined" ? sessionStorage.getItem("maskedIdSummary") : null;
   const [qrValue, setQrValue] = useState("{}");
+  const wifiNetwork = ref && ref !== "—" ? `NOVATAL-${ref.slice(-4).padStart(4, "0")}` : null;
+  const wifiPassword = ref && ref !== "—" ? `${ref.toUpperCase()}2024` : null;
+  const supportContacts = [
+    { label: "🔑 Lost or locked out?", ext: "Ext. 101" },
+    { label: "🌡️ Room temperature issues?", ext: "Ext. 205" },
+    { label: "📺 TV or remote not working?", ext: "Ext. 205" },
+    { label: "🛏️ Extra towels or amenities?", ext: "Ext. 301" },
+    { label: "🚪 Late checkout request?", ext: "Ext. 101" },
+    { label: "🍽️ Room service or dining?", ext: "Ext. 401" },
+  ];
 
   useEffect(() => {
     async function build() {
@@ -93,6 +103,34 @@ function Content() {
           </div>
         </div>
 
+        {wifiNetwork && wifiPassword && (
+          <div className="mt-6 rounded-2xl border border-transparent bg-[#F3F1ED] p-6 shadow-sm">
+            <h2 className="text-lg font-medium text-zinc-900">Wi-Fi credentials</h2>
+            <div className="mt-3 rounded-lg border border-zinc-200 bg-white p-4 font-mono text-xs text-zinc-900">
+              <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5">
+                <span className="text-zinc-600">Network</span>
+                <span className="font-semibold text-zinc-900">{wifiNetwork}</span>
+              </div>
+              <div className="mt-1.5 flex items-center justify-between">
+                <span className="text-zinc-600">Password</span>
+                <span className="font-semibold text-zinc-900">{wifiPassword}</span>
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="mt-6 rounded-2xl border border-transparent bg-[#F3F1ED] p-6 shadow-sm">
+          <h2 className="text-lg font-medium text-zinc-900">Quick support</h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {supportContacts.map((item) => (
+              <div key={item.label} className="rounded-lg border border-zinc-200 bg-white p-3 text-sm">
+                <p className="font-medium text-zinc-900">{item.label}</p>
+                <p className="mt-2 text-xs font-medium text-zinc-900">
+                  Dial: <span className="font-mono">{item.ext}</span>
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
         <p className="mt-6 text-center text-xs text-zinc-600">No data is uploaded to a server.</p>
       </main>
     </div>
