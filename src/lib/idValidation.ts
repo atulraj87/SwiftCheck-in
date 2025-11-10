@@ -57,13 +57,14 @@ export async function ocrTextFromFile(file: File): Promise<OcrResult> {
   try {
     const worker = await createWorker("eng", 1, { logger: () => {} });
     const { data } = await worker.recognize(canvas);
+    const rawWords = (data as any)?.words;
     await worker.terminate();
     return {
       text: (data.text || "").toUpperCase(),
       confidence: typeof data.confidence === "number" ? data.confidence : 0,
       words:
-        Array.isArray(data.words)
-          ? data.words
+        Array.isArray(rawWords)
+          ? rawWords
               .filter((word: any) => word?.text)
               .map((word: any) => ({
                 text: String(word.text || "").toUpperCase(),
