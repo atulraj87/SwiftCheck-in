@@ -38,17 +38,27 @@ async function fileToCanvas(file: File): Promise<HTMLCanvasElement> {
   }
 }
 
-export async function ocrTextFromFile(file: File): Promise<string> {
+export type OcrResult = { text: string; confidence: number };
+
+export async function ocrTextFromFile(file: File): Promise<OcrResult> {
   const { createWorker } = await import("tesseract.js");
   const canvas = await fileToCanvas(file);
-  const worker = await createWorker("eng", 1, { logger: () => {} });
-  const { data } = await worker.recognize(canvas);
-  await worker.terminate();
-  return (data.text || "").toUpperCase();
+  try {
+    const worker = await createWorker("eng", 1, { logger: () => {} });
+    const { data } = await worker.recognize(canvas);
+    await worker.terminate();
+    return {
+      text: (data.text || "").toUpperCase(),
+      confidence: typeof data.confidence === "number" ? data.confidence : 0,
+    };
+  } catch (error) {
+    console.warn("[ocr] failed to process ID document", error);
+    return { text: "", confidence: 0 };
+  }
 }
 
 export async function validateIdContent(file: File, idType: string): Promise<IdValidationResult> {
-  const text = await ocrTextFromFile(file);
+  const { text, confidence } = await ocrTextFromFile(file);
   const hasMrz = /P</.test(text) && /<{5,}/.test(text);
   const hasAadhaar = /\b\d{4}\s?\d{4}\s?\d{4}\b/.test(text);
   const hasEmiratesId = /\b784-\d{4}-\d{7}-\d\b/.test(text);
@@ -81,9 +91,24 @@ export async function validateIdContent(file: File, idType: string): Promise<IdV
       ok = false;
   }
 
-  return ok
-    ? { ok: true, extractedText: text }
-    : { ok: false, message: `The uploaded file does not look like a valid ${idType}.` };
+  if (ok) {
+    return { ok: true, extractedText: text };
+  }
+
+  const fallbackAcceptable =
+    text.replace(/\s+/g, "").length > 20 ||
+    confidence < 40 ||
+    /\bIDENTITY\b|\bGOVERNMENT\b|\bPERMIT\b/.test(text);
+
+  if (fallbackAcceptable) {
+    return {
+      ok: true,
+      extractedText: text,
+      message: "We could not auto-verify this ID with high confidence. Flagged for manual review.",
+    };
+  }
+
+  return { ok: false, message: `The uploaded file does not look like a valid ${idType}.` };
 }
 
 

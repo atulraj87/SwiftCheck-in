@@ -30,6 +30,7 @@ function Content() {
   const [agree, setAgree] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string>("");
+  const [fileWarning, setFileWarning] = useState<string>("");
   const [maskedPreview, setMaskedPreview] = useState<string>("");
   const [maskedSummary, setMaskedSummary] = useState<string>("");
   const [showCamera, setShowCamera] = useState(false);
@@ -60,11 +61,15 @@ function Content() {
   };
   const idOptions = country ? countryToIdTypes[country] ?? ["Passport"] : [];
 
-  function resetIdArtifacts() {
+  function resetIdArtifacts(options: { preserveMessages?: boolean } = {}) {
+    const { preserveMessages = false } = options;
     setFile(null);
     setMaskedPreview("");
     setMaskedSummary("");
-    setFileError("");
+    if (!preserveMessages) {
+      setFileError("");
+      setFileWarning("");
+    }
     setShowCamera(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -149,16 +154,19 @@ function Content() {
     const allowed = ["image/jpeg", "image/png", "application/pdf"];
     if (!allowed.includes(selected.type)) {
       setFileError("Only JPG, PNG or PDF files are allowed.");
-      resetIdArtifacts();
+      setFileWarning("");
+      resetIdArtifacts({ preserveMessages: true });
       return;
     }
     setFileError("");
+    setFileWarning("");
     setIsProcessing(true);
     try {
       const validation = await validateIdContent(selected, idType);
       if (!validation.ok) {
         const message = validation.message || `The uploaded file does not match ${idType}. Please upload the correct document.`;
         setFileError(message);
+        setFileWarning("");
         setFile(null);
         setMaskedPreview("");
         setMaskedSummary("");
@@ -171,6 +179,7 @@ function Content() {
         setShowCamera(false);
         return;
       }
+      setFileWarning(validation.message ?? "");
       const masked = await createMaskedPreview(selected, idType, validation.extractedText);
       setFile(selected);
       setMaskedPreview(masked.dataUrl);
@@ -182,7 +191,7 @@ function Content() {
     } catch (error) {
       console.error(error);
       setFileError("Could not process the document. Please try a clearer scan or PDF.");
-      resetIdArtifacts();
+      resetIdArtifacts({ preserveMessages: true });
     } finally {
       setIsProcessing(false);
     }
@@ -531,6 +540,7 @@ function Content() {
                   <p className="mt-2 text-xs text-zinc-600">Processing ID... Please wait.</p>
                 )}
                 {fileError && <p className="mt-2 text-xs text-red-600">{fileError}</p>}
+                {!fileError && fileWarning && <p className="mt-2 text-xs text-amber-600">{fileWarning}</p>}
               </div>
             </div>
 
