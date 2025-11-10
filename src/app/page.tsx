@@ -746,7 +746,7 @@ function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps
   const onImageLoad = (e: SyntheticEvent<HTMLImageElement>) => {
     const { naturalWidth: width, naturalHeight: height } = e.currentTarget;
     imageRef.current = e.currentTarget;
-    const initialCrop = centerCrop(
+    const percentCrop = centerCrop(
       makeAspectCrop(
         {
           unit: "%",
@@ -759,8 +759,8 @@ function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps
       width,
       height
     );
-    setCrop(initialCrop);
-    setCompletedCrop(initialCrop);
+    setCrop(percentCrop);
+    setCompletedCrop(percentCropToPixels(percentCrop, width, height));
   };
 
   const handleSave = async () => {
@@ -794,7 +794,13 @@ function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps
           </button>
         </div>
         <div className="mt-3 space-y-3">
-          <ReactCrop crop={crop} onChange={(newCrop) => setCrop(newCrop)} onComplete={(c) => setCompletedCrop(c)} aspect={cropAspect} minHeight={80}>
+          <ReactCrop
+            crop={crop}
+            onChange={(newCrop: Crop) => setCrop(newCrop)}
+            onComplete={(pixelCrop: PixelCrop) => setCompletedCrop(pixelCrop)}
+            aspect={cropAspect}
+            minHeight={80}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               ref={imageRef}
@@ -887,6 +893,22 @@ async function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
+}
+
+function percentCropToPixels(crop: Crop, imageWidth: number, imageHeight: number): PixelCrop {
+  const clamp = (value: number, max: number) => Math.max(0, Math.min(value, max));
+  const width = clamp(Math.round(((crop.width ?? 0) / 100) * imageWidth), imageWidth);
+  const height = clamp(Math.round(((crop.height ?? 0) / 100) * imageHeight), imageHeight);
+  const x = clamp(Math.round(((crop.x ?? 0) / 100) * imageWidth), Math.max(0, imageWidth - width));
+  const y = clamp(Math.round(((crop.y ?? 0) / 100) * imageHeight), Math.max(0, imageHeight - height));
+
+  return {
+    unit: "px",
+    width,
+    height,
+    x,
+    y,
+  };
 }
 
 async function dataUrlToFile(dataUrl: string, filename: string, fallbackMimeType = "image/jpeg"): Promise<File> {
