@@ -528,7 +528,7 @@ function Content() {
             {showCamera && !isProcessing && (
               <CameraCapture
                 onCapture={async (captured) => {
-                  await processSelectedFile(captured, { skipCrop: true });
+                  await processSelectedFile(captured);
                   if (fileInputRef.current) {
                     fileInputRef.current.value = "";
                   }
@@ -613,44 +613,17 @@ type CameraCaptureProps = {
 
 function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string>("");
-  const [capturedDataUrl, setCapturedDataUrl] = useState<string | null>(null);
-  const [crop, setCrop] = useState<Crop>();
-  const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
-  const [isSaving, setIsSaving] = useState(false);
-  const cropAspect = 3 / 2;
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
-    async function start() {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setError("Camera access is not supported in this browser.");
-        return;
-      }
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-      } catch {
-        setError("Camera access was blocked. Please allow camera permissions or upload a file instead.");
-      }
-    }
-
-    if (!capturedDataUrl) {
-      start();
-    }
-
+    startCamera();
     return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
+      stopStream();
     };
-  }, [capturedDataUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const stopStream = () => {
     if (streamRef.current) {
@@ -659,15 +632,8 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     }
   };
 
-  const restartCamera = async () => {
-    setCapturedDataUrl(null);
-    setCrop(undefined);
-    setCompletedCrop(undefined);
-    setIsSaving(false);
+  const startCamera = async () => {
     setError("");
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setError("Camera access is not supported in this browser.");
       return;
@@ -684,8 +650,16 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     }
   };
 
-  const capture = () => {
-    if (!videoRef.current) return;
+  const restartCamera = async () => {
+    stopStream();
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    await startCamera();
+  };
+
+  const capture = async () => {
+    if (!videoRef.current || isProcessing) return;
     const canvas = document.createElement("canvas");
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
@@ -693,95 +667,31 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     if (!ctx) return;
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
-    setCapturedDataUrl(dataUrl);
     stopStream();
-  };
-
-  const onImageLoad = (e: SyntheticEvent<HTMLImageElement>) => {
-    const { naturalWidth: width, naturalHeight: height } = e.currentTarget;
-    imageRef.current = e.currentTarget;
-    const initialCrop = centerCrop(
-      makeAspectCrop(
-        {
-          unit: "%",
-          width: 90,
-        },
-        cropAspect,
-        width,
-        height
-      ),
-      width,
-      height
-    );
-    setCrop(initialCrop);
-    setCompletedCrop(initialCrop);
-  };
-
-  async function confirmCrop() {
-    if (!imageRef.current || !completedCrop || completedCrop.width <= 0 || completedCrop.height <= 0) {
-      return;
-    }
-    setIsSaving(true);
+    setIsProcessing(true);
     try {
-      const croppedFile = await generateCroppedFile(
-        imageRef.current,
-        completedCrop,
-        "image/jpeg",
-        `captured-id-${Date.now()}.jpg`
-      );
-      await onCapture(croppedFile);
+      const file = await dataUrlToFile(dataUrl, `captured-id-${Date.now()}.jpg`, "image/jpeg");
+      await onCapture(file);
       onClose();
     } catch (err) {
       console.error(err);
-      setError("Could not process the cropped image. Please try again.");
-      setIsSaving(false);
+      setError("Could not process the captured image. Please try again.");
+      await restartCamera();
+    } finally {
+      setIsProcessing(false);
     }
-  }
-
-  const hasCrop = Boolean(capturedDataUrl);
+  };
 
   return (
     <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-zinc-800">
-          {hasCrop ? "Adjust crop before uploading" : "Capture ID using your camera"}
-        </p>
-        <button type="button" className="text-xs text-zinc-500 hover:text-zinc-800" onClick={() => (hasCrop ? restartCamera() : onClose())}>
+        <p className="text-sm font-medium text-zinc-800">Capture ID using your camera</p>
+        <button type="button" className="text-xs text-zinc-500 hover:text-zinc-800" onClick={onClose}>
           Close
         </button>
       </div>
       {error ? (
         <p className="mt-2 text-xs text-red-600">{error}</p>
-      ) : hasCrop ? (
-        <div className="mt-3 space-y-3">
-          <ReactCrop crop={crop} onChange={(newCrop) => setCrop(newCrop)} onComplete={(c) => setCompletedCrop(c)} aspect={cropAspect} minHeight={80}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={capturedDataUrl}
-              alt="Captured ID preview"
-              className="max-h-[420px] w-full max-w-full rounded"
-              onLoad={onImageLoad}
-            />
-          </ReactCrop>
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100"
-              onClick={restartCamera}
-            >
-              Retake
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center rounded-md bg-[#5E0F8B] px-4 py-2 text-sm font-medium text-white hover:bg-[#4A0B6E] disabled:cursor-not-allowed disabled:bg-zinc-400"
-              disabled={!completedCrop || isSaving}
-              onClick={confirmCrop}
-            >
-              {isSaving ? "Saving..." : "Save & Continue"}
-            </button>
-          </div>
-          <p className="text-xs text-zinc-500">Drag the corners to keep the photo and name while hiding any background.</p>
-        </div>
       ) : (
         <div className="mt-3 space-y-3">
           <video ref={videoRef} className="w-full rounded bg-black/20" playsInline muted />
@@ -790,15 +700,17 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
               type="button"
               className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100"
               onClick={restartCamera}
+              disabled={isProcessing}
             >
               Refresh Camera
             </button>
             <button
               type="button"
-              className="inline-flex items-center rounded-md bg-[#5E0F8B] px-4 py-2 text-sm font-medium text-white hover:bg-[#4A0B6E]"
+              className="inline-flex items-center rounded-md bg-[#5E0F8B] px-4 py-2 text-sm font-medium text-white hover:bg-[#4A0B6E] disabled:cursor-not-allowed disabled:bg-zinc-400"
               onClick={capture}
+              disabled={isProcessing}
             >
-              Capture Photo
+              {isProcessing ? "Processing..." : "Capture Photo"}
             </button>
           </div>
           <p className="text-xs text-zinc-500">Hold steady and ensure the entire ID is visible before capturing.</p>
@@ -975,6 +887,13 @@ async function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
+}
+
+async function dataUrlToFile(dataUrl: string, filename: string, fallbackMimeType = "image/jpeg"): Promise<File> {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  const mimeType = blob.type || fallbackMimeType;
+  return new File([blob], filename, { type: mimeType });
 }
 
 function deriveCroppedFilename(originalName: string, mimeType: string): string {
@@ -1195,27 +1114,35 @@ async function createMaskedPreview(
   const summary = deriveMaskedSummary(idType, extractedText);
   const idNumberInfo = extractIdNumber(idType, extractedText, words);
 
+  const watermarkStripeHeight = Math.max(40, Math.round(canvas.height * 0.12));
+
   if (idNumberInfo) {
-    maskNumberRegions(ctx, canvas, idNumberInfo.masked, idNumberInfo.boxes);
+    maskNumberRegions(ctx, canvas, idNumberInfo.masked, idNumberInfo.boxes, watermarkStripeHeight + 12);
   } else {
-    const fallbackY = canvas.height * 0.7;
-    const fontSize = Math.max(22, Math.round(canvas.width * 0.05));
-    drawMaskStrip(ctx, canvas, summary ?? "Sensitive details masked", fallbackY, fontSize, {
+    const availableHeight = Math.max(40, canvas.height - watermarkStripeHeight - 24);
+    const fallbackHeight = Math.max(52, Math.round(availableHeight * 0.22));
+    const fallbackWidth = Math.min(canvas.width * 0.76, canvas.width - 32);
+    const fallbackArea = {
+      x: Math.max(16, (canvas.width - fallbackWidth) / 2),
+      y: Math.min(Math.max(18, availableHeight * 0.45), Math.max(0, availableHeight - fallbackHeight - 12)),
+      width: fallbackWidth,
+      height: fallbackHeight,
+    };
+    drawMaskPanel(ctx, fallbackArea, summary ?? "Sensitive details masked", {
       background: "rgba(0,0,0,0.58)",
       textColor: "#FFFFFF",
     });
   }
 
   // Add watermark stripe at bottom
-  const stripeHeight = Math.max(40, Math.round(canvas.height * 0.12));
   ctx.fillStyle = "rgba(46, 62, 52, 0.85)";
-  ctx.fillRect(0, canvas.height - stripeHeight, canvas.width, stripeHeight);
+  ctx.fillRect(0, canvas.height - watermarkStripeHeight, canvas.width, watermarkStripeHeight);
 
   ctx.fillStyle = "#F3F1ED";
   ctx.font = `${Math.max(16, Math.round(canvas.width * 0.035))}px "Segoe UI", sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("Masked Copy — For Hotel Verification Only", canvas.width / 2, canvas.height - stripeHeight / 2);
+  ctx.fillText("Masked Copy — For Hotel Verification Only", canvas.width / 2, canvas.height - watermarkStripeHeight / 2);
 
   return {
     dataUrl: canvas.toDataURL("image/jpeg", 0.85),
@@ -1321,90 +1248,156 @@ function boxesOverlap(a: MaskBox, b: MaskBox): boolean {
 }
 
 function expandBox(box: MaskBox, canvasWidth: number, canvasHeight: number): MaskBox {
-  const padX = Math.max(12, (isFinite(canvasWidth) ? canvasWidth : box.width) * 0.06);
-  const padY = Math.max(12, (isFinite(canvasHeight) ? canvasHeight : box.height) * 0.12);
+  const widthBasis = isFinite(canvasWidth) ? canvasWidth : box.width;
+  const heightBasis = isFinite(canvasHeight) ? canvasHeight : box.height;
+  const padX = Math.min(Math.max(10, box.width * 0.2), widthBasis * 0.08);
+  const padY = Math.min(Math.max(8, box.height * 0.3), heightBasis * 0.12);
   const x = Math.max(0, box.x - padX);
   const y = Math.max(0, box.y - padY);
   const maxWidth = isFinite(canvasWidth) ? Math.max(1, canvasWidth - x) : Number.POSITIVE_INFINITY;
   const maxHeight = isFinite(canvasHeight) ? Math.max(1, canvasHeight - y) : Number.POSITIVE_INFINITY;
-  const width = Math.min(box.width + padX * 2, maxWidth);
-  const height = Math.min(box.height + padY * 2, maxHeight);
+  const width = Math.min(
+    box.width + padX * 2,
+    isFinite(canvasWidth) ? Math.min(maxWidth, canvasWidth * 0.55) : box.width + padX * 2
+  );
+  const height = Math.min(
+    box.height + padY * 2,
+    isFinite(canvasHeight) ? Math.min(maxHeight, canvasHeight * 0.25) : box.height + padY * 2
+  );
   return { x, y, width, height };
 }
 
-function maskNumberRegions(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, maskedText: string, boxes?: MaskBox[]) {
-  const style = {
+function maskNumberRegions(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  maskedText: string,
+  boxes?: MaskBox[],
+  reservedBottom = 0
+) {
+  const style: MaskPanelStyle = {
     background: "rgba(255,255,255,0.95)",
     textColor: "#111111",
     stroke: "rgba(0,0,0,0.25)",
     strokeWidth: Math.max(1.5, canvas.width * 0.003),
   };
 
+  const usableHeight = Math.max(1, canvas.height - reservedBottom);
+
   if (boxes && boxes.length > 0) {
-    boxes.forEach((box) => {
-      const boundedX = Math.max(0, Math.min(box.x, canvas.width - 1));
-      const boundedY = Math.max(0, Math.min(box.y, canvas.height - 1));
-      const boundedWidth = Math.min(canvas.width - boundedX, box.width);
-      const boundedHeight = Math.min(canvas.height - boundedY, box.height);
-      const bounded = {
-        x: boundedX,
-        y: boundedY,
-        width: Math.max(1, boundedWidth),
-        height: Math.max(1, boundedHeight),
-      };
-      const expanded = expandBox(bounded, canvas.width, canvas.height);
-      const centerY = expanded.y + expanded.height / 2;
-      const fontSize = Math.max(18, expanded.height * 0.55);
-      drawMaskStrip(ctx, canvas, maskedText, centerY, fontSize, style, expanded);
+    const prepared = boxes
+      .map((box) => clampBoxToCanvas(box, canvas.width, usableHeight))
+      .map((box) => clampBoxToCanvas(expandBox(box, canvas.width, usableHeight), canvas.width, usableHeight))
+      .map((box) => ensureMaskArea(box, canvas.width, usableHeight));
+
+    prepared.forEach((area) => {
+      drawMaskPanel(ctx, area, maskedText, style);
     });
     return;
   }
 
-  const defaultY = canvas.height * 0.6;
-  const fontSize = Math.max(24, Math.round(canvas.width * 0.055));
-  drawMaskStrip(ctx, canvas, maskedText, defaultY, fontSize, style);
+  const fallbackHeight = Math.max(48, Math.round(usableHeight * 0.18));
+  const fallbackWidth = Math.min(canvas.width * 0.7, canvas.width - 24);
+  const fallbackY = Math.max(12, Math.min(usableHeight - fallbackHeight - 12, usableHeight * 0.5 - fallbackHeight / 2));
+  const fallbackArea = {
+    x: Math.max(12, (canvas.width - fallbackWidth) / 2),
+    y: fallbackY,
+    width: fallbackWidth,
+    height: fallbackHeight,
+  };
+
+  drawMaskPanel(ctx, fallbackArea, maskedText, style);
 }
 
-type MaskStripStyle = {
+type MaskPanelStyle = {
   background: string;
   textColor: string;
   stroke?: string;
   strokeWidth?: number;
 };
 
-function drawMaskStrip(
-  ctx: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
-  text: string,
-  centerY: number,
-  fontSize: number,
-  style: MaskStripStyle,
-  bounds?: { x: number; width: number; height?: number }
-) {
+function drawMaskPanel(ctx: CanvasRenderingContext2D, area: MaskBox, text: string, style: MaskPanelStyle) {
   ctx.save();
-  ctx.font = `bold ${fontSize}px "Segoe UI", Arial, sans-serif`;
-  const paddingX = bounds ? Math.max(16, bounds.width * 0.1) : Math.max(24, canvas.width * 0.04);
-  const paddingY = Math.max(14, fontSize * 0.35);
-  const textWidth = ctx.measureText(text).width;
-  const desiredWidth = textWidth + paddingX * 2;
-  const maxWidth = bounds ? Math.max(bounds.width, desiredWidth) : Math.min(canvas.width * 0.75, desiredWidth);
-  const width = bounds ? Math.min(canvas.width - bounds.x, maxWidth) : maxWidth;
-  const height = bounds?.height ? Math.max(bounds.height, fontSize + paddingY) : fontSize + paddingY;
-  const x = bounds ? bounds.x : (canvas.width - width) / 2;
-  const y = centerY - height / 2;
+  const radius = Math.min(area.height / 2, Math.max(8, area.height * 0.25));
+  drawRoundedRectPath(ctx, area.x, area.y, area.width, area.height, radius);
 
   ctx.fillStyle = style.background;
-  ctx.fillRect(x, y, width, height);
+  ctx.fill();
 
   if (style.stroke) {
     ctx.strokeStyle = style.stroke;
-    ctx.lineWidth = style.strokeWidth ?? Math.max(2, canvas.width * 0.003);
-    ctx.strokeRect(x, y, width, height);
+    ctx.lineWidth = style.strokeWidth ?? Math.max(1.5, area.width * 0.003);
+    ctx.stroke();
   }
 
+  let fontSize = Math.max(18, Math.min(area.height * 0.55, area.width * 0.2));
+  fontSize = fitFontSize(ctx, text, area.width - 24, fontSize);
+  ctx.font = `bold ${fontSize}px "Segoe UI", Arial, sans-serif`;
   ctx.fillStyle = style.textColor;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, x + width / 2, centerY);
+  ctx.fillText(text, area.x + area.width / 2, area.y + area.height / 2);
   ctx.restore();
+}
+
+function fitFontSize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, initialSize: number): number {
+  let size = initialSize;
+  while (size > 12) {
+    ctx.font = `bold ${size}px "Segoe UI", Arial, sans-serif`;
+    if (ctx.measureText(text).width <= maxWidth) {
+      return size;
+    }
+    size -= 1;
+  }
+  return 12;
+}
+
+function drawRoundedRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function clampBoxToCanvas(box: MaskBox, canvasWidth: number, canvasHeight: number): MaskBox {
+  const width = Math.max(1, Math.min(box.width, canvasWidth));
+  const height = Math.max(1, Math.min(box.height, canvasHeight));
+  const x = Math.max(0, Math.min(box.x, canvasWidth - width));
+  const y = Math.max(0, Math.min(box.y, canvasHeight - height));
+  return { x, y, width, height };
+}
+
+function ensureMaskArea(box: MaskBox, canvasWidth: number, canvasHeight: number): MaskBox {
+  const minWidth = Math.max(140, canvasWidth * 0.18);
+  const minHeight = Math.max(48, canvasHeight * 0.1);
+  let width = Math.min(Math.max(box.width, minWidth), canvasWidth);
+  let height = Math.min(Math.max(box.height, minHeight), canvasHeight);
+  let x = box.x - (width - box.width) / 2;
+  let y = box.y - (height - box.height) / 2;
+
+  if (x < 0) x = 0;
+  if (y < 0) y = 0;
+  if (x + width > canvasWidth) x = canvasWidth - width;
+  if (y + height > canvasHeight) y = canvasHeight - height;
+
+  return {
+    x: Math.max(0, x),
+    y: Math.max(0, y),
+    width: Math.max(1, width),
+    height: Math.max(1, height),
+  };
 }

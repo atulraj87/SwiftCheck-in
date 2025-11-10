@@ -18,6 +18,16 @@ function Content() {
   const ref = params.get("ref") ?? "—";
   const arrival = params.get("arrival") ?? "—";
   const qrValue = JSON.stringify({ ref, name, arrival });
+  const wifiNetwork = ref !== "—" ? `NOVATAL-${ref.slice(-4).padStart(4, "0")}` : null;
+  const wifiPassword = ref !== "—" ? `${ref.toUpperCase()}2024` : null;
+  const supportContacts = [
+    { label: "🔑 Lost or locked out?", ext: "Ext. 101" },
+    { label: "🌡️ Room temperature issues?", ext: "Ext. 205" },
+    { label: "📺 TV or remote not working?", ext: "Ext. 205" },
+    { label: "🛏️ Extra towels or amenities?", ext: "Ext. 301" },
+    { label: "🚪 Late checkout request?", ext: "Ext. 101" },
+    { label: "🍽️ Room service or dining?", ext: "Ext. 401" },
+  ];
 
   return (
     <div className="min-h-screen bg-[#D9DED7] text-zinc-900">
@@ -42,17 +52,17 @@ function Content() {
             </div>
           </div>
 
-          {ref !== "—" && (
+          {wifiNetwork && wifiPassword && (
             <div className="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
               <p className="text-xs font-medium">📶 Your Wi-Fi credentials</p>
               <div className="mt-2 rounded-md bg-white px-2 py-1.5 font-mono text-xs">
                 <div className="flex items-center justify-between border-b border-zinc-200 pb-1">
                   <span className="text-zinc-600">Network:</span>
-                  <span className="font-semibold text-zinc-900">NOVATAL-{ref.slice(-4).padStart(4, "0")}</span>
+                  <span className="font-semibold text-zinc-900">{wifiNetwork}</span>
                 </div>
                 <div className="mt-1 flex items-center justify-between">
                   <span className="text-zinc-600">Password:</span>
-                  <span className="font-semibold text-zinc-900">{ref.toUpperCase()}2024</span>
+                  <span className="font-semibold text-zinc-900">{wifiPassword}</span>
                 </div>
               </div>
             </div>
@@ -64,24 +74,14 @@ function Content() {
 
           <div className="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs">
             <p className="font-medium">Quick support</p>
-            <ul className="mt-2 space-y-1 text-zinc-600">
-              <li className="flex items-center justify-between">
-                <span>🔑 Lost key?</span>
-                <span className="font-mono text-zinc-800">Ext. 101</span>
-              </li>
-              <li className="flex items-center justify-between">
-                <span>🌡️ Room issues?</span>
-                <span className="font-mono text-zinc-800">Ext. 205</span>
-              </li>
-              <li className="flex items-center justify-between">
-                <span>🛏️ Need amenities?</span>
-                <span className="font-mono text-zinc-800">Ext. 301</span>
-              </li>
-              <li className="flex items-center justify-between">
-                <span>🍽️ Room service?</span>
-                <span className="font-mono text-zinc-800">Ext. 401</span>
-              </li>
-            </ul>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {supportContacts.map((item) => (
+                <div key={item.label} className="flex items-center justify-between rounded-md bg-white px-2 py-1.5 text-zinc-700">
+                  <span>{item.label}</span>
+                  <span className="font-mono text-zinc-900">{item.ext}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           <p className="mt-4 text-xs text-zinc-500">This is an email preview rendered as a web page.</p>
