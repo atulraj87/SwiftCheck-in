@@ -1,4 +1,15 @@
-export type IdValidationResult = { ok: boolean; message?: string; extractedText?: string };
+export type OcrWord = {
+  text: string;
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+  confidence: number;
+};
+
+export type IdValidationResult = {
+  ok: boolean;
+  message?: string;
+  extractedText?: string;
+  words?: OcrWord[];
+};
 
 async function fileToCanvas(file: File): Promise<HTMLCanvasElement> {
   const isPdf = file.type === "application/pdf";
@@ -38,7 +49,7 @@ async function fileToCanvas(file: File): Promise<HTMLCanvasElement> {
   }
 }
 
-export type OcrResult = { text: string; confidence: number };
+export type OcrResult = { text: string; confidence: number; words: OcrWord[] };
 
 export async function ocrTextFromFile(file: File): Promise<OcrResult> {
   const { createWorker } = await import("tesseract.js");
@@ -50,15 +61,30 @@ export async function ocrTextFromFile(file: File): Promise<OcrResult> {
     return {
       text: (data.text || "").toUpperCase(),
       confidence: typeof data.confidence === "number" ? data.confidence : 0,
+      words:
+        Array.isArray(data.words)
+          ? data.words
+              .filter((word: any) => word?.text)
+              .map((word: any) => ({
+                text: String(word.text || "").toUpperCase(),
+                bbox: {
+                  x0: Number(word.bbox?.x0 ?? 0),
+                  y0: Number(word.bbox?.y0 ?? 0),
+                  x1: Number(word.bbox?.x1 ?? 0),
+                  y1: Number(word.bbox?.y1 ?? 0),
+                },
+                confidence: Number(word.confidence ?? 0),
+              }))
+          : [],
     };
   } catch (error) {
     console.warn("[ocr] failed to process ID document", error);
-    return { text: "", confidence: 0 };
+    return { text: "", confidence: 0, words: [] };
   }
 }
 
 export async function validateIdContent(file: File, idType: string): Promise<IdValidationResult> {
-  const { text, confidence } = await ocrTextFromFile(file);
+  const { text, confidence, words } = await ocrTextFromFile(file);
   const hasMrz = /P</.test(text) && /<{5,}/.test(text);
   const hasAadhaar = /\b\d{4}\s?\d{4}\s?\d{4}\b/.test(text);
   const hasEmiratesId = /\b784-\d{4}-\d{7}-\d\b/.test(text);
@@ -92,7 +118,7 @@ export async function validateIdContent(file: File, idType: string): Promise<IdV
   }
 
   if (ok) {
-    return { ok: true, extractedText: text };
+    return { ok: true, extractedText: text, words };
   }
 
   const fallbackAcceptable =
@@ -104,6 +130,7 @@ export async function validateIdContent(file: File, idType: string): Promise<IdV
     return {
       ok: true,
       extractedText: text,
+      words,
       message: "We could not auto-verify this ID with high confidence. Flagged for manual review.",
     };
   }

@@ -2,7 +2,9 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { validateIdContent } from "@/lib/idValidation";
+import ReactCrop, { centerCrop, makeAspectCrop, type Crop, type PixelCrop } from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
+import { validateIdContent, type OcrWord } from "@/lib/idValidation";
 
 type MaskedPreviewResult = {
   dataUrl: string;
@@ -180,7 +182,7 @@ function Content() {
         return;
       }
       setFileWarning(validation.message ?? "");
-      const masked = await createMaskedPreview(selected, idType, validation.extractedText);
+      const masked = await createMaskedPreview(selected, idType, validation.extractedText, validation.words);
       setFile(selected);
       setMaskedPreview(masked.dataUrl);
       setMaskedSummary(masked.summary ?? "");
@@ -609,18 +611,24 @@ type CameraCaptureProps = {
 
 function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string>("");
+  const [capturedDataUrl, setCapturedDataUrl] = useState<string | null>(null);
+  const [crop, setCrop] = useState<Crop>();
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
+  const [isSaving, setIsSaving] = useState(false);
+  const cropAspect = 3 / 2;
 
   useEffect(() => {
-    let stream: MediaStream | null = null;
-
     async function start() {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setError("Camera access is not supported in this browser.");
         return;
       }
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
@@ -630,14 +638,49 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
       }
     }
 
-    start();
+    if (!capturedDataUrl) {
+      start();
+    }
 
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
       }
     };
-  }, []);
+  }, [capturedDataUrl]);
+
+  const stopStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const restartCamera = async () => {
+    setCapturedDataUrl(null);
+    setCrop(undefined);
+    setCompletedCrop(undefined);
+    setIsSaving(false);
+    setError("");
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setError("Camera access is not supported in this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch {
+      setError("Camera access was blocked. Please allow camera permissions or upload a file instead.");
+    }
+  };
 
   const capture = () => {
     if (!videoRef.current) return;
@@ -647,42 +690,152 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob(
-      async (blob) => {
-        if (!blob) return;
-        const capturedFile = new File([blob], `captured-id-${Date.now()}.jpg`, { type: "image/jpeg" });
-        await onCapture(capturedFile);
-        onClose();
-      },
-      "image/jpeg",
-      0.9
-    );
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+    setCapturedDataUrl(dataUrl);
+    stopStream();
   };
+
+  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth: width, naturalHeight: height } = e.currentTarget;
+    imageRef.current = e.currentTarget;
+    const initialCrop = centerCrop(
+      makeAspectCrop(
+        {
+          unit: "%",
+          width: 90,
+        },
+        cropAspect,
+        width,
+        height
+      ),
+      width,
+      height
+    );
+    setCrop(initialCrop);
+    setCompletedCrop(initialCrop);
+  };
+
+  async function confirmCrop() {
+    if (!imageRef.current || !completedCrop || completedCrop.width <= 0 || completedCrop.height <= 0) {
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const croppedFile = await generateCroppedFile(imageRef.current, completedCrop);
+      await onCapture(croppedFile);
+      onClose();
+    } catch (err) {
+      console.error(err);
+      setError("Could not process the cropped image. Please try again.");
+      setIsSaving(false);
+    }
+  }
+
+  const hasCrop = Boolean(capturedDataUrl);
 
   return (
     <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-zinc-800">Capture ID using your camera</p>
-        <button type="button" className="text-xs text-zinc-500 hover:text-zinc-800" onClick={onClose}>
+        <p className="text-sm font-medium text-zinc-800">
+          {hasCrop ? "Adjust crop before uploading" : "Capture ID using your camera"}
+        </p>
+        <button type="button" className="text-xs text-zinc-500 hover:text-zinc-800" onClick={() => (hasCrop ? restartCamera() : onClose())}>
           Close
         </button>
       </div>
       {error ? (
         <p className="mt-2 text-xs text-red-600">{error}</p>
+      ) : hasCrop ? (
+        <div className="mt-3 space-y-3">
+          <ReactCrop crop={crop} onChange={(newCrop) => setCrop(newCrop)} onComplete={(c) => setCompletedCrop(c)} aspect={cropAspect} minHeight={80}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={capturedDataUrl}
+              alt="Captured ID preview"
+              className="max-h-[420px] w-full max-w-full rounded"
+              onLoad={onImageLoad}
+            />
+          </ReactCrop>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100"
+              onClick={restartCamera}
+            >
+              Retake
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center rounded-md bg-[#5E0F8B] px-4 py-2 text-sm font-medium text-white hover:bg-[#4A0B6E] disabled:cursor-not-allowed disabled:bg-zinc-400"
+              disabled={!completedCrop || isSaving}
+              onClick={confirmCrop}
+            >
+              {isSaving ? "Saving..." : "Save & Continue"}
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500">Drag the corners to keep the photo and name while hiding any background.</p>
+        </div>
       ) : (
-        <>
-          <video ref={videoRef} className="mt-3 w-full rounded bg-black/20" playsInline muted />
-          <button
-            type="button"
-            className="mt-3 inline-flex items-center rounded-md bg-[#5E0F8B] px-4 py-2 text-sm font-medium text-white hover:bg-[#4A0B6E]"
-            onClick={capture}
-          >
-            Capture & Use Photo
-          </button>
-        </>
+        <div className="mt-3 space-y-3">
+          <video ref={videoRef} className="w-full rounded bg-black/20" playsInline muted />
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100"
+              onClick={restartCamera}
+            >
+              Refresh Camera
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center rounded-md bg-[#5E0F8B] px-4 py-2 text-sm font-medium text-white hover:bg-[#4A0B6E]"
+              onClick={capture}
+            >
+              Capture Photo
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500">Hold steady and ensure the entire ID is visible before capturing.</p>
+        </div>
       )}
     </div>
   );
+}
+
+async function generateCroppedFile(image: HTMLImageElement, crop: PixelCrop): Promise<File> {
+  const scaleX = image.naturalWidth / image.width;
+  const scaleY = image.naturalHeight / image.height;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.floor(crop.width * scaleX));
+  canvas.height = Math.max(1, Math.floor(crop.height * scaleY));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Canvas not supported");
+  }
+  ctx.drawImage(
+    image,
+    crop.x * scaleX,
+    crop.y * scaleY,
+    crop.width * scaleX,
+    crop.height * scaleY,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  return new Promise<File>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("Could not create cropped image"));
+          return;
+        }
+        resolve(new File([blob], `captured-id-${Date.now()}.jpg`, { type: "image/jpeg" }));
+      },
+      "image/jpeg",
+      0.92
+    );
+  });
 }
 
 async function canvasFromFile(file: File): Promise<HTMLCanvasElement> {
@@ -798,29 +951,41 @@ function deriveMaskedSummary(idType: string, text?: string): string | undefined 
   return undefined;
 }
 
-function extractIdNumber(idType: string, text?: string): { number: string; masked: string } | null {
+type MaskBox = { x: number; y: number; width: number; height: number };
+
+function extractIdNumber(
+  idType: string,
+  text?: string,
+  words: OcrWord[] = []
+): { number: string; masked: string; boxes?: MaskBox[] } | null {
   if (!text) return null;
   const cleaned = text.replace(/\s+/g, " ");
   if (idType === "Aadhaar") {
-    // Try multiple patterns: with spaces, without spaces, or any 12-digit sequence
-    const patterns = [
-      /\b\d{4}\s+\d{4}\s+\d{4}\b/,  // 1234 5678 9012
-      /\b\d{4}\s?\d{4}\s?\d{4}\b/,  // 1234 5678 9012 or 123456789012
-      /\b\d{12}\b/,                  // 123456789012 (no spaces)
-      /\d{4}[\s-]?\d{4}[\s-]?\d{4}/, // with optional dashes
-    ];
-    
-    for (const pattern of patterns) {
-      const match = cleaned.match(pattern);
-      if (match) {
-        const digits = match[0].replace(/[\s-]/g, "");
-        if (digits.length === 12) {
-          return { number: digits, masked: `XXXX XXXX ${digits.slice(-4)}` };
-        }
+    const info = locateNumberFromWords(words, {
+      minLength: 12,
+      maxLength: 12,
+      maskFormatter: (digits) => `XXXX XXXX ${digits.slice(-4)}`,
+      digitsOnly: true,
+    });
+    if (info) {
+      return info;
+    }
+    const match = cleaned.match(/\b\d{4}\s?\d{4}\s?\d{4}\b/);
+    if (match) {
+      const digits = match[0].replace(/[\s-]/g, "");
+      if (digits.length === 12) {
+        return { number: digits, masked: `XXXX XXXX ${digits.slice(-4)}` };
       }
     }
   }
   if (idType === "Passport") {
+    const info = locateNumberFromWords(words, {
+      regex: /^[A-Z][0-9]{7}$/,
+      maskFormatter: (value) => `${value[0]}XXXXXXX`,
+    });
+    if (info) {
+      return info;
+    }
     const match = cleaned.match(/\b[A-Z][0-9]{7}\b/);
     if (match) {
       const value = match[0];
@@ -828,6 +993,17 @@ function extractIdNumber(idType: string, text?: string): { number: string; maske
     }
   }
   if (idType === "Emirates ID") {
+    const info = locateNumberFromWords(words, {
+      regex: /^784[-\s]?\d{4}[-\s]?\d{7}[-\s]?\d$/,
+      maskFormatter: (value) => {
+        const digits = value.replace(/\D/g, "");
+        const last = digits.slice(-1);
+        return `784-XXXX-XXXXXXX-${last}`;
+      },
+    });
+    if (info) {
+      return info;
+    }
     const match = cleaned.match(/\b784-\d{4}-\d{7}-\d\b/);
     if (match) {
       const parts = match[0].split("-");
@@ -837,7 +1013,12 @@ function extractIdNumber(idType: string, text?: string): { number: string; maske
   return null;
 }
 
-async function createMaskedPreview(file: File, idType: string, extractedText?: string): Promise<MaskedPreviewResult> {
+async function createMaskedPreview(
+  file: File,
+  idType: string,
+  extractedText?: string,
+  words: OcrWord[] = []
+): Promise<MaskedPreviewResult> {
   const sourceCanvas = await canvasFromFile(file);
   const canvas = document.createElement("canvas");
   canvas.width = sourceCanvas.width;
@@ -849,73 +1030,17 @@ async function createMaskedPreview(file: File, idType: string, extractedText?: s
   ctx.drawImage(sourceCanvas, 0, 0);
 
   const summary = deriveMaskedSummary(idType, extractedText);
-  const idNumberInfo = extractIdNumber(idType, extractedText);
+  const idNumberInfo = extractIdNumber(idType, extractedText, words);
 
-  // Mask the ID number area (typically in center/middle area of ID card)
-  // For Aadhaar-style masking: mask the number area and show masked version matching reference format
-  if (idNumberInfo && idType === "Aadhaar") {
-    // Aadhaar number appears in multiple places - mask all occurrences
-    // Primary masking area (center/top area where number is prominently displayed)
-    const maskX = canvas.width * 0.15;
-    const maskY = canvas.height * 0.35;
-    const maskWidth = canvas.width * 0.7;
-    const maskHeight = canvas.height * 0.15;
-    
-    // Draw white background over the number area
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillRect(maskX, maskY, maskWidth, maskHeight);
-    
-    // Draw the masked number in exact format: "XXXX XXXX last4" (matching reference image)
-    ctx.fillStyle = "#000000";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    const fontSize = Math.max(28, Math.round(canvas.width * 0.065));
-    ctx.font = `bold ${fontSize}px "Segoe UI", Arial, sans-serif`;
-    ctx.fillText(idNumberInfo.masked, canvas.width / 2, maskY + maskHeight / 2);
-    
-    // Also mask bottom area where Aadhaar number might appear again
-    const bottomMaskY = canvas.height * 0.75;
-    if (bottomMaskY < canvas.height - 100) {
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fillRect(maskX, bottomMaskY, maskWidth, maskHeight * 0.8);
-      ctx.fillStyle = "#000000";
-      ctx.fillText(idNumberInfo.masked, canvas.width / 2, bottomMaskY + (maskHeight * 0.4));
-    }
-  } else if (idNumberInfo) {
-    // For other ID types, mask the number area similarly
-    const maskX = canvas.width * 0.15;
-    const maskY = canvas.height * 0.4;
-    const maskWidth = canvas.width * 0.7;
-    const maskHeight = canvas.height * 0.12;
-    
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillRect(maskX, maskY, maskWidth, maskHeight);
-    
-    ctx.fillStyle = "#000000";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    const fontSize = Math.max(20, Math.round(canvas.width * 0.05));
-    ctx.font = `bold ${fontSize}px "Segoe UI", Arial, sans-serif`;
-    ctx.fillText(idNumberInfo.masked, canvas.width / 2, maskY + maskHeight / 2);
+  if (idNumberInfo) {
+    maskNumberRegions(ctx, canvas, idNumberInfo.masked, idNumberInfo.boxes);
   } else {
-    // Fallback: generic overlay if number not found
-    const overlayWidth = canvas.width * 0.75;
-    const overlayHeight = canvas.height * 0.22;
-    const overlayX = (canvas.width - overlayWidth) / 2;
-    const overlayY = canvas.height * 0.35;
-
-    ctx.fillStyle = "rgba(0, 0, 0, 0.58)";
-    ctx.fillRect(overlayX, overlayY, overlayWidth, overlayHeight);
-
-    ctx.strokeStyle = "rgba(255,255,255,0.6)";
-    ctx.lineWidth = Math.max(2, canvas.width * 0.006);
-    ctx.strokeRect(overlayX, overlayY, overlayWidth, overlayHeight);
-
-    ctx.fillStyle = "#FFFFFF";
-    ctx.textAlign = "center";
-    const primarySize = Math.max(18, Math.round(canvas.width * 0.045));
-    ctx.font = `${primarySize}px "Segoe UI", sans-serif`;
-    ctx.fillText(summary ?? "Sensitive details masked", canvas.width / 2, overlayY + overlayHeight / 2);
+    const fallbackY = canvas.height * 0.7;
+    const fontSize = Math.max(22, Math.round(canvas.width * 0.05));
+    drawMaskStrip(ctx, canvas, summary ?? "Sensitive details masked", fallbackY, fontSize, {
+      background: "rgba(0,0,0,0.58)",
+      textColor: "#FFFFFF",
+    });
   }
 
   // Add watermark stripe at bottom
@@ -933,4 +1058,190 @@ async function createMaskedPreview(file: File, idType: string, extractedText?: s
     dataUrl: canvas.toDataURL("image/jpeg", 0.85),
     summary,
   };
+}
+
+type LocateOptions = {
+  minLength?: number;
+  maxLength?: number;
+  regex?: RegExp;
+  maskFormatter: (value: string) => string;
+  digitsOnly?: boolean;
+};
+
+function locateNumberFromWords(words: OcrWord[], options: LocateOptions): { number: string; masked: string; boxes: MaskBox[] } | null {
+  if (!words.length) return null;
+  let matchedValue: string | null = null;
+  const matchedSegments: MaskBox[] = [];
+
+  for (let start = 0; start < words.length; start += 1) {
+    let normalized = "";
+    let digitsNormalized = "";
+    const segmentBoxes: MaskBox[] = [];
+
+    for (let index = start; index < words.length; index += 1) {
+      const current = words[index];
+      if (!current.text?.trim()) {
+        if (options.digitsOnly && digitsNormalized.length > 0) {
+          break;
+        }
+        continue;
+      }
+      normalized += current.text.replace(/\s+/g, "");
+      digitsNormalized += current.text.replace(/\D+/g, "");
+      const candidate = options.digitsOnly ? digitsNormalized : normalized;
+      const length = candidate.length;
+      segmentBoxes.push({
+        x: Math.max(0, current.bbox.x0),
+        y: Math.max(0, current.bbox.y0),
+        width: Math.max(1, current.bbox.x1 - current.bbox.x0),
+        height: Math.max(1, current.bbox.y1 - current.bbox.y0),
+      });
+
+      if (options.regex) {
+        if (options.regex.test(candidate)) {
+          matchedValue = matchedValue ?? candidate;
+          if (matchedValue === candidate) {
+            matchedSegments.push(mergeBoxes(segmentBoxes));
+          }
+          break;
+        }
+      } else {
+        if (options.maxLength && length > options.maxLength) {
+          break;
+        }
+        if ((options.minLength === undefined || length >= options.minLength) && (options.maxLength === undefined || length === options.maxLength)) {
+          matchedValue = matchedValue ?? candidate;
+          if (matchedValue === candidate) {
+            matchedSegments.push(mergeBoxes(segmentBoxes));
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  if (!matchedValue) return null;
+
+  const uniqueBoxes = collapseOverlappingBoxes(matchedSegments);
+  return {
+    number: matchedValue,
+    masked: options.maskFormatter(matchedValue),
+    boxes: uniqueBoxes,
+  };
+}
+
+function mergeBoxes(boxes: MaskBox[]): MaskBox {
+  const x = Math.min(...boxes.map((b) => b.x));
+  const y = Math.min(...boxes.map((b) => b.y));
+  const x2 = Math.max(...boxes.map((b) => b.x + b.width));
+  const y2 = Math.max(...boxes.map((b) => b.y + b.height));
+  return { x, y, width: x2 - x, height: y2 - y };
+}
+
+function collapseOverlappingBoxes(boxes: MaskBox[]): MaskBox[] {
+  const result: MaskBox[] = [];
+  boxes.forEach((box) => {
+    const expanded = expandBox(box, Infinity, Infinity);
+    const overlappingIndex = result.findIndex((other) => boxesOverlap(expanded, other));
+    if (overlappingIndex >= 0) {
+      const merged = mergeBoxes([result[overlappingIndex], expanded]);
+      result[overlappingIndex] = merged;
+    } else {
+      result.push(expanded);
+    }
+  });
+  return result;
+}
+
+function boxesOverlap(a: MaskBox, b: MaskBox): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function expandBox(box: MaskBox, canvasWidth: number, canvasHeight: number): MaskBox {
+  const padX = Math.max(12, (isFinite(canvasWidth) ? canvasWidth : box.width) * 0.06);
+  const padY = Math.max(12, (isFinite(canvasHeight) ? canvasHeight : box.height) * 0.12);
+  const x = Math.max(0, box.x - padX);
+  const y = Math.max(0, box.y - padY);
+  const maxWidth = isFinite(canvasWidth) ? Math.max(1, canvasWidth - x) : Number.POSITIVE_INFINITY;
+  const maxHeight = isFinite(canvasHeight) ? Math.max(1, canvasHeight - y) : Number.POSITIVE_INFINITY;
+  const width = Math.min(box.width + padX * 2, maxWidth);
+  const height = Math.min(box.height + padY * 2, maxHeight);
+  return { x, y, width, height };
+}
+
+function maskNumberRegions(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, maskedText: string, boxes?: MaskBox[]) {
+  const style = {
+    background: "rgba(255,255,255,0.95)",
+    textColor: "#111111",
+    stroke: "rgba(0,0,0,0.25)",
+    strokeWidth: Math.max(1.5, canvas.width * 0.003),
+  };
+
+  if (boxes && boxes.length > 0) {
+    boxes.forEach((box) => {
+      const boundedX = Math.max(0, Math.min(box.x, canvas.width - 1));
+      const boundedY = Math.max(0, Math.min(box.y, canvas.height - 1));
+      const boundedWidth = Math.min(canvas.width - boundedX, box.width);
+      const boundedHeight = Math.min(canvas.height - boundedY, box.height);
+      const bounded = {
+        x: boundedX,
+        y: boundedY,
+        width: Math.max(1, boundedWidth),
+        height: Math.max(1, boundedHeight),
+      };
+      const expanded = expandBox(bounded, canvas.width, canvas.height);
+      const centerY = expanded.y + expanded.height / 2;
+      const fontSize = Math.max(18, expanded.height * 0.55);
+      drawMaskStrip(ctx, canvas, maskedText, centerY, fontSize, style, expanded);
+    });
+    return;
+  }
+
+  const defaultY = canvas.height * 0.6;
+  const fontSize = Math.max(24, Math.round(canvas.width * 0.055));
+  drawMaskStrip(ctx, canvas, maskedText, defaultY, fontSize, style);
+}
+
+type MaskStripStyle = {
+  background: string;
+  textColor: string;
+  stroke?: string;
+  strokeWidth?: number;
+};
+
+function drawMaskStrip(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  text: string,
+  centerY: number,
+  fontSize: number,
+  style: MaskStripStyle,
+  bounds?: { x: number; width: number; height?: number }
+) {
+  ctx.save();
+  ctx.font = `bold ${fontSize}px "Segoe UI", Arial, sans-serif`;
+  const paddingX = bounds ? Math.max(16, bounds.width * 0.1) : Math.max(24, canvas.width * 0.04);
+  const paddingY = Math.max(14, fontSize * 0.35);
+  const textWidth = ctx.measureText(text).width;
+  const desiredWidth = textWidth + paddingX * 2;
+  const maxWidth = bounds ? Math.max(bounds.width, desiredWidth) : Math.min(canvas.width * 0.75, desiredWidth);
+  const width = bounds ? Math.min(canvas.width - bounds.x, maxWidth) : maxWidth;
+  const height = bounds?.height ? Math.max(bounds.height, fontSize + paddingY) : fontSize + paddingY;
+  const x = bounds ? bounds.x : (canvas.width - width) / 2;
+  const y = centerY - height / 2;
+
+  ctx.fillStyle = style.background;
+  ctx.fillRect(x, y, width, height);
+
+  if (style.stroke) {
+    ctx.strokeStyle = style.stroke;
+    ctx.lineWidth = style.strokeWidth ?? Math.max(2, canvas.width * 0.003);
+    ctx.strokeRect(x, y, width, height);
+  }
+
+  ctx.fillStyle = style.textColor;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + width / 2, centerY);
+  ctx.restore();
 }
