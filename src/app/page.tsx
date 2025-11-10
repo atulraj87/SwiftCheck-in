@@ -731,7 +731,6 @@ type CropModalProps = {
 function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps) {
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [crop, setCrop] = useState<Crop>();
-  const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const [isSaving, setIsSaving] = useState(false);
   const cropAspect = 3 / 2;
   const mountedRef = useRef(true);
@@ -760,18 +759,21 @@ function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps
       height
     );
     setCrop(percentCrop);
-    setCompletedCrop(percentCropToPixels(percentCrop, width, height));
   };
 
   const handleSave = async () => {
-    if (!imageRef.current || !completedCrop || completedCrop.width <= 0 || completedCrop.height <= 0) {
+    if (!imageRef.current || !crop) {
+      return;
+    }
+    const pixelCrop = percentCropToPixels(crop, imageRef.current.naturalWidth, imageRef.current.naturalHeight);
+    if (pixelCrop.width <= 0 || pixelCrop.height <= 0) {
       return;
     }
     setIsSaving(true);
     try {
       const croppedFile = await generateCroppedFile(
         imageRef.current,
-        completedCrop,
+        pixelCrop,
         mimeType || "image/jpeg",
         deriveCroppedFilename(filename, mimeType)
       );
@@ -797,7 +799,6 @@ function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps
           <ReactCrop
             crop={crop}
             onChange={(newCrop: Crop) => setCrop(newCrop)}
-            onComplete={(pixelCrop: PixelCrop) => setCompletedCrop(pixelCrop)}
             aspect={cropAspect}
             minHeight={80}
           >
@@ -821,7 +822,7 @@ function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps
             <button
               type="button"
               className="inline-flex items-center rounded-md bg-[#5E0F8B] px-4 py-2 text-sm font-medium text-white hover:bg-[#4A0B6E] disabled:cursor-not-allowed disabled:bg-zinc-400"
-              disabled={!completedCrop || isSaving}
+              disabled={!crop || isSaving}
               onClick={handleSave}
             >
               {isSaving ? "Saving..." : "Save & Continue"}
@@ -897,10 +898,25 @@ async function fileToDataUrl(file: File): Promise<string> {
 
 function percentCropToPixels(crop: Crop, imageWidth: number, imageHeight: number): PixelCrop {
   const clamp = (value: number, max: number) => Math.max(0, Math.min(value, max));
-  const width = clamp(Math.round(((crop.width ?? 0) / 100) * imageWidth), imageWidth);
-  const height = clamp(Math.round(((crop.height ?? 0) / 100) * imageHeight), imageHeight);
-  const x = clamp(Math.round(((crop.x ?? 0) / 100) * imageWidth), Math.max(0, imageWidth - width));
-  const y = clamp(Math.round(((crop.y ?? 0) / 100) * imageHeight), Math.max(0, imageHeight - height));
+  const isPercent = !crop.unit || crop.unit === "%";
+
+  const rawWidth = crop.width ?? 0;
+  const rawHeight = crop.height ?? 0;
+  const rawX = crop.x ?? 0;
+  const rawY = crop.y ?? 0;
+
+  const width = clamp(
+    Math.round(isPercent ? (rawWidth / 100) * imageWidth : rawWidth),
+    imageWidth
+  );
+  const height = clamp(
+    Math.round(isPercent ? (rawHeight / 100) * imageHeight : rawHeight),
+    imageHeight
+  );
+  const maxX = Math.max(0, imageWidth - width);
+  const maxY = Math.max(0, imageHeight - height);
+  const x = clamp(Math.round(isPercent ? (rawX / 100) * imageWidth : rawX), maxX);
+  const y = clamp(Math.round(isPercent ? (rawY / 100) * imageHeight : rawY), maxY);
 
   return {
     unit: "px",
