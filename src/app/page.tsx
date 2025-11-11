@@ -1,9 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState, type SyntheticEvent } from "react";
-import ReactCrop, { type Crop, type PixelCrop } from "react-image-crop";
-import "react-image-crop/dist/ReactCrop.css";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { maskAadhaar, validateIdContent, type OcrWord } from "@/lib/idValidation";
 
 type MaskedPreviewResult = {
@@ -37,9 +35,7 @@ function Content() {
   const [maskedSummary, setMaskedSummary] = useState<string>("");
   const [showCamera, setShowCamera] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [cropModal, setCropModal] = useState<{ src: string; filename: string; mimeType: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const cropNextFileRef = useRef<((file: File) => Promise<void> | void) | null>(null);
   const isPrefilled = params.get("prefill") === "1";
   const [emailError, setEmailError] = useState<string>("");
   const [phoneError, setPhoneError] = useState<string>("");
@@ -78,8 +74,6 @@ function Content() {
       setFileWarning("");
     }
     setShowCamera(false);
-    setCropModal(null);
-    cropNextFileRef.current = null;
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -155,7 +149,7 @@ function Content() {
     }
   }
 
-  async function processSelectedFile(selected: File | null, options: { skipCrop?: boolean } = {}) {
+  async function processSelectedFile(selected: File | null) {
     if (!selected) return;
     if (!idType) {
       setFileError("Select an ID type before uploading.");
@@ -166,26 +160,6 @@ function Content() {
       setFileError("Only JPG, PNG or PDF files are allowed.");
       setFileWarning("");
       resetIdArtifacts({ preserveMessages: true });
-      return;
-    }
-    const isImage = selected.type.startsWith("image/");
-    if (!options.skipCrop && isImage) {
-      try {
-        const dataUrl = await fileToDataUrl(selected);
-        cropNextFileRef.current = async (croppedFile: File) => {
-          cropNextFileRef.current = null;
-          await processSelectedFile(croppedFile, { skipCrop: true });
-        };
-        setCropModal({
-          src: dataUrl,
-          filename: selected.name,
-          mimeType: selected.type || "image/jpeg",
-        });
-      } catch (error) {
-        console.error(error);
-        setFileError("Could not open the image for cropping. Please try another file.");
-        resetIdArtifacts({ preserveMessages: true });
-      }
       return;
     }
     setFileError("");
@@ -589,29 +563,6 @@ function Content() {
           Original IDs never leave your browser. A masked copy is securely shared with the hotel.
         </p>
       </main>
-      {cropModal && (
-        <CropModal
-          src={cropModal.src}
-          filename={cropModal.filename}
-          mimeType={cropModal.mimeType}
-          onSave={async (file) => {
-            setCropModal(null);
-            const handler = cropNextFileRef.current;
-            cropNextFileRef.current = null;
-            if (handler) {
-              await handler(file);
-            }
-          }}
-          onCancel={() => {
-            cropNextFileRef.current = null;
-            setCropModal(null);
-            resetIdArtifacts({ preserveMessages: true });
-            if (fileInputRef.current) {
-              fileInputRef.current.value = "";
-            }
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -728,193 +679,6 @@ function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
       )}
     </div>
   );
-}
-
-type CropModalProps = {
-  src: string;
-  filename: string;
-  mimeType: string;
-  onSave: (file: File) => Promise<void> | void;
-  onCancel: () => void;
-};
-
-function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps) {
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const [crop, setCrop] = useState<Crop>({ unit: "%", x: 4, y: 6, width: 92, height: 88 });
-  const [isSaving, setIsSaving] = useState(false);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  const onImageLoad = (e: SyntheticEvent<HTMLImageElement>) => {
-    imageRef.current = e.currentTarget;
-    setCrop({ unit: "%", x: 4, y: 6, width: 92, height: 88 });
-  };
-
-  const handleSave = async () => {
-    if (!imageRef.current || !crop) {
-      return;
-    }
-    const pixelCrop = percentCropToPixels(crop, imageRef.current.naturalWidth, imageRef.current.naturalHeight);
-    if (pixelCrop.width <= 0 || pixelCrop.height <= 0) {
-      return;
-    }
-    setIsSaving(true);
-    try {
-      const croppedFile = await generateCroppedFile(
-        imageRef.current,
-        pixelCrop,
-        mimeType || "image/jpeg",
-        deriveCroppedFilename(filename, mimeType)
-      );
-      await onSave(croppedFile);
-    } catch (error) {
-      console.error(error);
-      if (mountedRef.current) {
-        setIsSaving(false);
-      }
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-      <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-xl">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-zinc-800">Adjust crop before uploading</p>
-          <button type="button" className="text-xs text-zinc-500 hover:text-zinc-800" onClick={onCancel}>
-            Cancel
-          </button>
-        </div>
-        <div className="mt-3 space-y-3">
-          <ReactCrop crop={crop} onChange={(newCrop: Crop) => setCrop(newCrop)}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              ref={imageRef}
-              src={src}
-              alt="Crop selected ID"
-              className="max-h-[420px] w-full max-w-full rounded"
-              onLoad={onImageLoad}
-            />
-          </ReactCrop>
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100"
-              onClick={onCancel}
-            >
-              Choose different photo
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center rounded-md bg-[#5E0F8B] px-4 py-2 text-sm font-medium text-white hover:bg-[#4A0B6E] disabled:cursor-not-allowed disabled:bg-zinc-400"
-              disabled={!crop || isSaving}
-              onClick={handleSave}
-            >
-              {isSaving ? "Saving..." : "Save & Continue"}
-            </button>
-          </div>
-          <p className="text-xs text-zinc-500">Drag the crop to cover the ID while keeping the photo and name visible.</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-async function generateCroppedFile(
-  image: HTMLImageElement,
-  crop: PixelCrop,
-  mimeType = "image/jpeg",
-  filename?: string
-): Promise<File> {
-  const scaleX = image.naturalWidth / image.width;
-  const scaleY = image.naturalHeight / image.height;
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.floor(crop.width * scaleX));
-  canvas.height = Math.max(1, Math.floor(crop.height * scaleY));
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("Canvas not supported");
-  }
-  ctx.drawImage(
-    image,
-    crop.x * scaleX,
-    crop.y * scaleY,
-    crop.width * scaleX,
-    crop.height * scaleY,
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  );
-
-  return new Promise<File>((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          reject(new Error("Could not create cropped image"));
-          return;
-        }
-        const extension = mimeType === "image/png" ? "png" : "jpg";
-        const safeName =
-          filename ??
-          `cropped-id-${Date.now()}.${extension}`;
-        resolve(new File([blob], safeName, { type: mimeType }));
-      },
-      mimeType,
-      mimeType === "image/png" ? undefined : 0.92
-    );
-  });
-}
-
-async function fileToDataUrl(file: File): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-      } else {
-        reject(new Error("Could not read file"));
-      }
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  });
-}
-
-function percentCropToPixels(crop: Crop, imageWidth: number, imageHeight: number): PixelCrop {
-  const clamp = (value: number, max: number) => Math.max(0, Math.min(value, max));
-  const isPercent = !crop.unit || crop.unit === "%";
-
-  const rawWidth = crop.width ?? 0;
-  const rawHeight = crop.height ?? 0;
-  const rawX = crop.x ?? 0;
-  const rawY = crop.y ?? 0;
-
-  const width = clamp(
-    Math.round(isPercent ? (rawWidth / 100) * imageWidth : rawWidth),
-    imageWidth
-  );
-  const height = clamp(
-    Math.round(isPercent ? (rawHeight / 100) * imageHeight : rawHeight),
-    imageHeight
-  );
-  const maxX = Math.max(0, imageWidth - width);
-  const maxY = Math.max(0, imageHeight - height);
-  const x = clamp(Math.round(isPercent ? (rawX / 100) * imageWidth : rawX), maxX);
-  const y = clamp(Math.round(isPercent ? (rawY / 100) * imageHeight : rawY), maxY);
-
-  return {
-    unit: "px",
-    width,
-    height,
-    x,
-    y,
-  };
 }
 
 async function dataUrlToFile(dataUrl: string, filename: string, fallbackMimeType = "image/jpeg"): Promise<File> {
@@ -1166,6 +930,13 @@ async function createMaskedPreview(
     });
   }
 
+  if (idType === "Aadhaar") {
+    maskAadhaarFragments(ctx, canvas, words, {
+      originalDigits: idNumberInfo?.number,
+      excludeBoxes: idNumberInfo?.boxes ?? [],
+    });
+  }
+
   // Add watermark stripe at bottom
   ctx.fillStyle = "rgba(46, 62, 52, 0.85)";
   ctx.fillRect(0, canvas.height - watermarkStripeHeight, canvas.width, watermarkStripeHeight);
@@ -1383,6 +1154,53 @@ function maskNumberRegions(
     });
 }
 
+function maskAadhaarFragments(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  words: OcrWord[],
+  options: { originalDigits?: string; excludeBoxes?: MaskBox[] } = {}
+) {
+  if (!words.length) return;
+  const digitsTarget = options.originalDigits?.replace(/\D/g, "") ?? "";
+  const hasTargetDigits = digitsTarget.length >= 4;
+  const excluded = options.excludeBoxes ?? [];
+  const seen = new Set<string>();
+
+  words.forEach((word) => {
+    const raw = word.text ? String(word.text) : "";
+    if (!raw.trim()) return;
+    const digitsOnly = raw.replace(/\D/g, "");
+    if (digitsOnly.length < 4) return;
+
+    let shouldMask = false;
+    if (hasTargetDigits) {
+      shouldMask = digitsOnly !== "" && digitsTarget.includes(digitsOnly);
+    } else {
+      shouldMask = digitsOnly.length >= 6;
+    }
+    if (!shouldMask) return;
+
+    const base: MaskBox = {
+      x: Math.max(0, word.bbox.x0),
+      y: Math.max(0, word.bbox.y0),
+      width: Math.max(1, word.bbox.x1 - word.bbox.x0),
+      height: Math.max(1, word.bbox.y1 - word.bbox.y0),
+    };
+
+    if (excluded.some((box) => boxesOverlap(box, base))) {
+      return;
+    }
+
+    const expanded = expandBox(base, canvas.width, canvas.height);
+    const key = `${Math.round(expanded.x)}-${Math.round(expanded.y)}-${Math.round(expanded.width)}-${Math.round(expanded.height)}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    paintRedaction(ctx, expanded);
+  });
+}
+
 type NumberMaskStyle = {
   background: string;
   textColor: string;
@@ -1478,6 +1296,15 @@ function drawNumberMask(
     ctx.fillText(segments.tail, cursorX, centerY);
   }
 
+  ctx.restore();
+}
+
+function paintRedaction(ctx: CanvasRenderingContext2D, area: MaskBox) {
+  ctx.save();
+  const radius = Math.min(area.height / 2, Math.max(10, area.height * 0.45));
+  drawRoundedRectPath(ctx, area.x, area.y, area.width, area.height, radius);
+  ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
+  ctx.fill();
   ctx.restore();
 }
 
