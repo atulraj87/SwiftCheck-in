@@ -1094,7 +1094,8 @@ function extractIdNumber(
     if (match) {
       const digits = match[0].replace(/[\s-]/g, "");
       if (digits.length === 12) {
-        return { number: digits, masked: `XXXX XXXX ${digits.slice(-4)}` };
+        const boxes = collectSequentialBoxes(words, digits, { digitsOnly: true });
+        return { number: digits, masked: `XXXX XXXX ${digits.slice(-4)}`, boxes: boxes.length ? boxes : undefined };
       }
     }
   }
@@ -1109,7 +1110,8 @@ function extractIdNumber(
     const match = cleaned.match(/\b[A-Z][0-9]{7}\b/);
     if (match) {
       const value = match[0];
-      return { number: value, masked: `${value[0]}XXXXXXX` };
+      const boxes = collectSequentialBoxes(words, value);
+      return { number: value, masked: `${value[0]}XXXXXXX`, boxes: boxes.length ? boxes : undefined };
     }
   }
   if (idType === "Emirates ID") {
@@ -1127,7 +1129,9 @@ function extractIdNumber(
     const match = cleaned.match(/\b784-\d{4}-\d{7}-\d\b/);
     if (match) {
       const parts = match[0].split("-");
-      return { number: match[0], masked: `784-XXXX-XXXXXXX-${parts[3]}` };
+      const digits = match[0].replace(/\D/g, "");
+      const boxes = collectSequentialBoxes(words, digits, { digitsOnly: true });
+      return { number: match[0], masked: `784-XXXX-XXXXXXX-${parts[3]}`, boxes: boxes.length ? boxes : undefined };
     }
   }
   return null;
@@ -1256,6 +1260,42 @@ function locateNumberFromWords(words: OcrWord[], options: LocateOptions): { numb
     masked: options.maskFormatter(matchedValue),
     boxes: uniqueBoxes,
   };
+}
+
+function collectSequentialBoxes(words: OcrWord[], value: string, options: { digitsOnly?: boolean } = {}): MaskBox[] {
+  if (!words.length || !value) return [];
+  const normalizedTarget = options.digitsOnly ? value.replace(/\D/g, "") : value.replace(/\s+/g, "").toUpperCase();
+  if (!normalizedTarget) return [];
+
+  let consumed = 0;
+  const segments: MaskBox[] = [];
+
+  for (const word of words) {
+    const rawText = word.text ?? "";
+    const normalizedWord = options.digitsOnly ? rawText.replace(/\D/g, "") : rawText.replace(/\s+/g, "").toUpperCase();
+    if (!normalizedWord) {
+      continue;
+    }
+    const expected = normalizedTarget.slice(consumed, consumed + normalizedWord.length);
+    if (normalizedWord === expected) {
+      segments.push({
+        x: Math.max(0, word.bbox.x0),
+        y: Math.max(0, word.bbox.y0),
+        width: Math.max(1, word.bbox.x1 - word.bbox.x0),
+        height: Math.max(1, word.bbox.y1 - word.bbox.y0),
+      });
+      consumed += normalizedWord.length;
+      if (consumed >= normalizedTarget.length) {
+        break;
+      }
+    }
+  }
+
+  if (consumed < normalizedTarget.length) {
+    return [];
+  }
+
+  return collapseOverlappingBoxes(segments);
 }
 
 function mergeBoxes(boxes: MaskBox[]): MaskBox {
