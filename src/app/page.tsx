@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState, type SyntheticEvent } from "react";
-import ReactCrop, { centerCrop, makeAspectCrop, type Crop, type PixelCrop } from "react-image-crop";
+import ReactCrop, { type Crop, type PixelCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 import { validateIdContent, type OcrWord } from "@/lib/idValidation";
 
@@ -730,9 +730,8 @@ type CropModalProps = {
 
 function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps) {
   const imageRef = useRef<HTMLImageElement | null>(null);
-  const [crop, setCrop] = useState<Crop>();
+  const [crop, setCrop] = useState<Crop>({ unit: "%", x: 4, y: 6, width: 92, height: 88 });
   const [isSaving, setIsSaving] = useState(false);
-  const cropAspect = 3 / 2;
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -743,22 +742,8 @@ function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps
   }, []);
 
   const onImageLoad = (e: SyntheticEvent<HTMLImageElement>) => {
-    const { naturalWidth: width, naturalHeight: height } = e.currentTarget;
     imageRef.current = e.currentTarget;
-    const percentCrop = centerCrop(
-      makeAspectCrop(
-        {
-          unit: "%",
-          width: 90,
-        },
-        cropAspect,
-        width,
-        height
-      ),
-      width,
-      height
-    );
-    setCrop(percentCrop);
+    setCrop({ unit: "%", x: 4, y: 6, width: 92, height: 88 });
   };
 
   const handleSave = async () => {
@@ -799,8 +784,7 @@ function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps
           <ReactCrop
             crop={crop}
             onChange={(newCrop: Crop) => setCrop(newCrop)}
-            aspect={cropAspect}
-            minHeight={80}
+            keepSelection
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -1159,7 +1143,7 @@ async function createMaskedPreview(
   const watermarkStripeHeight = Math.max(40, Math.round(canvas.height * 0.12));
 
   if (idNumberInfo) {
-    maskNumberRegions(ctx, canvas, idNumberInfo.masked, idNumberInfo.boxes, watermarkStripeHeight + 12);
+    maskNumberRegions(ctx, canvas, idNumberInfo, watermarkStripeHeight + 12);
   } else {
     const availableHeight = Math.max(40, canvas.height - watermarkStripeHeight - 24);
     const fallbackHeight = Math.max(52, Math.round(availableHeight * 0.22));
