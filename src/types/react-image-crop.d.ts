@@ -31,6 +31,7 @@ declare module "react-image-crop" {
     onComplete?(crop: Crop, percentCrop: Crop): void;
     aspect?: number;
     minHeight?: number;
+    keepSelection?: boolean;
     children?: React.ReactNode;
   }
 

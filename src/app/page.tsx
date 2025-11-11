@@ -781,11 +781,7 @@ function CropModal({ src, filename, mimeType, onSave, onCancel }: CropModalProps
           </button>
         </div>
         <div className="mt-3 space-y-3">
-          <ReactCrop
-            crop={crop}
-            onChange={(newCrop: Crop) => setCrop(newCrop)}
-            keepSelection
-          >
+          <ReactCrop crop={crop} onChange={(newCrop: Crop) => setCrop(newCrop)}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               ref={imageRef}
@@ -1332,42 +1328,162 @@ function expandBox(box: MaskBox, canvasWidth: number, canvasHeight: number): Mas
 function maskNumberRegions(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
-  maskedText: string,
-  boxes?: MaskBox[],
+  info: { number: string; masked: string; boxes?: MaskBox[] },
   reservedBottom = 0
 ) {
-  const style: MaskPanelStyle = {
-    background: "rgba(255,255,255,0.95)",
-    textColor: "#111111",
-    stroke: "rgba(0,0,0,0.25)",
-    strokeWidth: Math.max(1.5, canvas.width * 0.003),
+  const style: NumberMaskStyle = {
+    background: "rgba(17, 24, 39, 0.92)",
+    textColor: "#F9FAFB",
+    accentColor: "#FBBF24",
+    shadowColor: "rgba(15, 23, 42, 0.35)",
+    highlightBackground: "rgba(251, 191, 36, 0.18)",
   };
 
   const usableHeight = Math.max(1, canvas.height - reservedBottom);
+  const boxes = info.boxes && info.boxes.length > 0 ? info.boxes : [];
 
-  if (boxes && boxes.length > 0) {
-    const prepared = boxes
-      .map((box) => clampBoxToCanvas(box, canvas.width, usableHeight))
-      .map((box) => clampBoxToCanvas(expandBox(box, canvas.width, usableHeight), canvas.width, usableHeight))
-      .map((box) => ensureMaskArea(box, canvas.width, usableHeight));
-
-    prepared.forEach((area) => {
-      drawMaskPanel(ctx, area, maskedText, style);
-    });
+  if (boxes.length === 0) {
+    const fallbackWidth = Math.min(canvas.width * 0.74, canvas.width - 24);
+    const fallbackHeight = Math.max(44, Math.round(canvas.height * 0.08));
+    const fallbackArea = {
+      x: Math.max(12, (canvas.width - fallbackWidth) / 2),
+      y: Math.max(16, Math.min(usableHeight - fallbackHeight - 12, canvas.height * 0.52)),
+      width: fallbackWidth,
+      height: fallbackHeight,
+    };
+    drawNumberMask(ctx, fallbackArea, info, style);
     return;
   }
 
-  const fallbackHeight = Math.max(48, Math.round(usableHeight * 0.18));
-  const fallbackWidth = Math.min(canvas.width * 0.7, canvas.width - 24);
-  const fallbackY = Math.max(12, Math.min(usableHeight - fallbackHeight - 12, usableHeight * 0.5 - fallbackHeight / 2));
-  const fallbackArea = {
-    x: Math.max(12, (canvas.width - fallbackWidth) / 2),
-    y: fallbackY,
-    width: fallbackWidth,
-    height: fallbackHeight,
-  };
+  boxes
+    .map((box) => adjustMaskArea(box, canvas.width, usableHeight))
+    .forEach((area) => {
+      drawNumberMask(ctx, area, info, style);
+    });
+}
 
-  drawMaskPanel(ctx, fallbackArea, maskedText, style);
+type NumberMaskStyle = {
+  background: string;
+  textColor: string;
+  accentColor: string;
+  shadowColor: string;
+  highlightBackground: string;
+};
+
+function adjustMaskArea(box: MaskBox, canvasWidth: number, usableHeight: number): MaskBox {
+  const paddingX = Math.max(12, box.width * 0.18);
+  const paddingY = Math.max(10, box.height * 0.45);
+
+  let width = Math.max(box.width + paddingX * 2, Math.max(160, box.width * 1.4));
+  width = Math.min(width, canvasWidth - 16);
+
+  let x = Math.max(8, box.x - paddingX);
+  if (x + width > canvasWidth - 8) {
+    x = Math.max(8, canvasWidth - 8 - width);
+  }
+
+  let height = Math.max(box.height + paddingY * 2, Math.max(40, box.height * 1.6));
+  height = Math.min(height, usableHeight - 8);
+
+  let y = Math.max(8, box.y - paddingY);
+  if (y + height > usableHeight - 8) {
+    y = Math.max(8, usableHeight - 8 - height);
+  }
+
+  return { x, y, width, height };
+}
+
+function drawNumberMask(
+  ctx: CanvasRenderingContext2D,
+  area: MaskBox,
+  info: { number: string; masked: string },
+  style: NumberMaskStyle
+) {
+  ctx.save();
+  const radius = Math.min(area.height / 2, Math.max(12, area.height * 0.4));
+  ctx.shadowColor = style.shadowColor;
+  ctx.shadowBlur = Math.max(6, area.height * 0.25);
+  drawRoundedRectPath(ctx, area.x, area.y, area.width, area.height, radius);
+  ctx.fillStyle = style.background;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  const paddingX = Math.max(18, area.height * 0.38);
+  const maxTextWidth = area.width - paddingX * 2;
+  if (maxTextWidth <= 0) {
+    ctx.restore();
+    return;
+  }
+
+  const segments = formatMaskLabel(info.masked, info.number);
+  let fontSize = Math.max(18, area.height * 0.58);
+  fontSize = fitFontSize(ctx, segments.combined, maxTextWidth, fontSize);
+  ctx.font = `600 ${fontSize}px "Segoe UI", Arial, sans-serif`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+
+  const centerY = area.y + area.height / 2;
+  let cursorX = area.x + paddingX;
+
+  if (segments.maskedPart) {
+    ctx.fillStyle = style.textColor;
+    ctx.fillText(segments.maskedPart, cursorX, centerY);
+    cursorX += ctx.measureText(segments.maskedPart).width;
+  }
+
+  if (segments.tail) {
+    if (segments.maskedPart) {
+      cursorX += Math.max(fontSize * 0.15, 8);
+    }
+    const tailWidth = ctx.measureText(segments.tail).width;
+    const highlightPaddingX = Math.max(8, fontSize * 0.22);
+    const highlightPaddingY = Math.max(6, fontSize * 0.3);
+    const highlightHeight = fontSize + highlightPaddingY;
+    const highlightY = centerY - highlightHeight / 2;
+    const highlightX = cursorX - highlightPaddingX * 0.5;
+
+    ctx.fillStyle = style.highlightBackground;
+    drawRoundedRectPath(
+      ctx,
+      highlightX,
+      highlightY,
+      tailWidth + highlightPaddingX,
+      highlightHeight,
+      Math.min(12, highlightHeight / 2)
+    );
+    ctx.fill();
+
+    ctx.fillStyle = style.accentColor;
+    ctx.fillText(segments.tail, cursorX, centerY);
+  }
+
+  ctx.restore();
+}
+
+function formatMaskLabel(maskedText: string, originalNumber?: string): {
+  maskedPart: string;
+  tail: string;
+  combined: string;
+} {
+  const masked = (maskedText || "").trim();
+  const numericTailMatch = masked.match(/(\d{3,})$/);
+  if (numericTailMatch) {
+    const tail = numericTailMatch[1];
+    const maskedPart = masked.slice(0, -tail.length).trimEnd();
+    const combined = `${maskedPart} ${tail}`.trim();
+    return { maskedPart, tail, combined };
+  }
+
+  const digits = (originalNumber ?? "").replace(/\D/g, "");
+  if (digits.length >= 4) {
+    const tail = digits.slice(-4);
+    const maskedPartCandidate = masked && /X/i.test(masked) ? masked : "XXXX XXXX";
+    const maskedPart = maskedPartCandidate.trim();
+    const combined = `${maskedPart} ${tail}`.trim();
+    return { maskedPart, tail, combined };
+  }
+
+  return { maskedPart: masked, tail: "", combined: masked };
 }
 
 type MaskPanelStyle = {
@@ -1433,33 +1549,4 @@ function drawRoundedRectPath(
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
-}
-
-function clampBoxToCanvas(box: MaskBox, canvasWidth: number, canvasHeight: number): MaskBox {
-  const width = Math.max(1, Math.min(box.width, canvasWidth));
-  const height = Math.max(1, Math.min(box.height, canvasHeight));
-  const x = Math.max(0, Math.min(box.x, canvasWidth - width));
-  const y = Math.max(0, Math.min(box.y, canvasHeight - height));
-  return { x, y, width, height };
-}
-
-function ensureMaskArea(box: MaskBox, canvasWidth: number, canvasHeight: number): MaskBox {
-  const minWidth = Math.max(140, canvasWidth * 0.18);
-  const minHeight = Math.max(48, canvasHeight * 0.1);
-  let width = Math.min(Math.max(box.width, minWidth), canvasWidth);
-  let height = Math.min(Math.max(box.height, minHeight), canvasHeight);
-  let x = box.x - (width - box.width) / 2;
-  let y = box.y - (height - box.height) / 2;
-
-  if (x < 0) x = 0;
-  if (y < 0) y = 0;
-  if (x + width > canvasWidth) x = canvasWidth - width;
-  if (y + height > canvasHeight) y = canvasHeight - height;
-
-  return {
-    x: Math.max(0, x),
-    y: Math.max(0, y),
-    width: Math.max(1, width),
-    height: Math.max(1, height),
-  };
 }

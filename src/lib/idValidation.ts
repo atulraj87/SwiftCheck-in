@@ -122,10 +122,26 @@ export async function validateIdContent(file: File, idType: string): Promise<IdV
     return { ok: true, extractedText: text, words };
   }
 
+  const typeHints: Record<string, RegExp> = {
+    Aadhaar: /\bAADHAAR\b|\bUIDAI\b|\bUNIQUE IDENTIFICATION\b/,
+    Passport: /\bPASSPORT\b|\bREPUBLIC\b|\bP</,
+    "Emirates ID": /\bEMIRATES\b|\b784\b|\bUAE\b/,
+    "Driving Licence": /\bDRIV(?:ER|ING)\b|\bLICEN[SC]E\b/,
+    "Driver License": /\bDRIV(?:ER|ING)\b|\bLICEN[SC]E\b/,
+    "State ID": /\bSTATE\b(?:\s+|\b).*?\bID\b|\bIDENTIFICATION\b/,
+    BRP: /\bRESIDENCE\b|\bPERMIT\b|\bBRP\b/,
+  };
+
+  const normalizedText = text.replace(/\s+/g, " ");
+  const condensedText = normalizedText.replace(/\s+/g, "");
+  const hintRegex = typeHints[idType];
+  const matchesExpectedType = hintRegex ? hintRegex.test(normalizedText) : false;
+
   const fallbackAcceptable =
-    text.replace(/\s+/g, "").length > 20 ||
-    confidence < 40 ||
-    /\bIDENTITY\b|\bGOVERNMENT\b|\bPERMIT\b/.test(text);
+    matchesExpectedType &&
+    (condensedText.length > 20 ||
+      confidence < 40 ||
+      /\bIDENTITY\b|\bGOVERNMENT\b|\bPERMIT\b/.test(normalizedText));
 
   if (fallbackAcceptable) {
     return {
