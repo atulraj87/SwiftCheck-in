@@ -1247,7 +1247,7 @@ function collectSequentialBoxes(words: OcrWord[], value: string, options: { digi
   const normalizedTarget = options.digitsOnly ? value.replace(/\D/g, "") : value.replace(/\s+/g, "").toUpperCase();
   if (!normalizedTarget) return [];
 
-  const matches: MaskBox[] = [];
+  const occurrences: MaskBox[][] = [];
 
   for (let start = 0; start < words.length; start += 1) {
     let consumed = 0;
@@ -1278,13 +1278,23 @@ function collectSequentialBoxes(words: OcrWord[], value: string, options: { digi
       consumed += normalizedWord.length;
 
       if (consumed >= normalizedTarget.length) {
-        matches.push(mergeBoxes(segment));
+        if (segment.length > 0) {
+          occurrences.push(segment.slice());
+        }
         break;
       }
     }
   }
 
-  return matches.length ? collapseOverlappingBoxes(matches) : [];
+  if (!occurrences.length) {
+    return [];
+  }
+
+  const collapsed = occurrences
+    .map((segment) => collapseOverlappingBoxes(segment)[0])
+    .filter((box): box is MaskBox => Boolean(box));
+
+  return collapsed;
 }
 
 function mergeBoxes(boxes: MaskBox[]): MaskBox {
