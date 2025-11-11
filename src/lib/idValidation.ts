@@ -11,13 +11,12 @@ export type IdValidationResult = {
   words?: OcrWord[];
 };
 
-export function maskAadhaar(aadhaarNumber = ""): string {
-  const digits = aadhaarNumber.replace(/\D/g, "");
-  if (digits.length >= 4) {
-    const lastFour = digits.slice(-4);
-    return `XXXX XXXX ${lastFour}`;
+export function maskAadhaar(aadhaar = ""): string {
+  const digits = aadhaar.replace(/\D/g, "");
+  if (digits.length === 12) {
+    return `XXXX XXXX ${digits.slice(8, 12)}`;
   }
-  return "XXXX XXXX XXXX";
+  return aadhaar;
 }
 
 async function fileToCanvas(file: File): Promise<HTMLCanvasElement> {

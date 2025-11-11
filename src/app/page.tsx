@@ -1166,6 +1166,40 @@ function maskAadhaarFragments(
   const excluded = options.excludeBoxes ?? [];
   const seen = new Set<string>();
 
+  const style: NumberMaskStyle = {
+    background: "rgba(17, 24, 39, 0.92)",
+    textColor: "#F9FAFB",
+    accentColor: "#FBBF24",
+    shadowColor: "rgba(15, 23, 42, 0.35)",
+    highlightBackground: "rgba(251, 191, 36, 0.18)",
+  };
+
+  const maskedValue =
+    digitsTarget.length === 12 ? maskAadhaar(digitsTarget) : digitsTarget ? maskAadhaar(digitsTarget) : "XXXX XXXX XXXX";
+
+  const keyForBox = (box: MaskBox) =>
+    `${Math.round(box.x)}-${Math.round(box.y)}-${Math.round(box.width)}-${Math.round(box.height)}`;
+
+  const overlapsExcluded = (box: MaskBox) => excluded.some((ex) => boxesOverlap(ex, box));
+
+  const applyHighlight = (box: MaskBox) => {
+    const expanded = adjustMaskArea(box, canvas.width, canvas.height);
+    if (overlapsExcluded(expanded)) {
+      return;
+    }
+    const key = keyForBox(expanded);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    drawNumberMask(ctx, expanded, { number: digitsTarget, masked: maskedValue }, style);
+  };
+
+  if (digitsTarget.length === 12) {
+    const sequenceBoxes = collectSequentialBoxes(words, digitsTarget, { digitsOnly: true });
+    sequenceBoxes.forEach(applyHighlight);
+  }
+
   words.forEach((word) => {
     const raw = word.text ? String(word.text) : "";
     if (!raw.trim()) return;
@@ -1191,13 +1225,17 @@ function maskAadhaarFragments(
       return;
     }
 
-    const expanded = expandBox(base, canvas.width, canvas.height);
-    const key = `${Math.round(expanded.x)}-${Math.round(expanded.y)}-${Math.round(expanded.width)}-${Math.round(expanded.height)}`;
-    if (seen.has(key)) {
-      return;
+    if (digitsTarget.length === 12) {
+      applyHighlight(base);
+    } else {
+      const expanded = expandBox(base, canvas.width, canvas.height);
+      const key = keyForBox(expanded);
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      paintRedaction(ctx, expanded);
     }
-    seen.add(key);
-    paintRedaction(ctx, expanded);
   });
 }
 
