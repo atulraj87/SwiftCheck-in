@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { maskAadhaar } from "@/lib/idValidation";
 
 type Entry = {
   name: string;
@@ -17,6 +18,16 @@ type Entry = {
   status: string;
   createdAt: string;
 };
+
+function sanitizeEntry(entry: Entry): Entry {
+  if (entry.idType === "Aadhaar" && entry.maskedSummary) {
+    const masked = maskAadhaar(entry.maskedSummary);
+    if (masked !== entry.maskedSummary) {
+      return { ...entry, maskedSummary: masked };
+    }
+  }
+  return entry;
+}
 
 function getStatusColor(status: string): string {
   if (status === "Checked-in" || status === "approved" || status === "Checked-out") {
@@ -42,7 +53,17 @@ export default function HotelDashboardPage() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem("demoEntries");
-      setEntries(raw ? JSON.parse(raw) : []);
+      const parsed: Entry[] = raw ? JSON.parse(raw) : [];
+      const sanitized = parsed.map(sanitizeEntry);
+      setEntries(sanitized);
+      const hasChanges = sanitized.some((entry, index) => entry !== parsed[index]);
+      if (hasChanges) {
+        try {
+          localStorage.setItem("demoEntries", JSON.stringify(sanitized));
+        } catch {
+          // ignore storage errors
+        }
+      }
     } catch {
       setEntries([]);
     }
@@ -62,9 +83,10 @@ export default function HotelDashboardPage() {
   }, [entries, query, statusFilter]);
 
   function persist(updated: Entry[]) {
-    setEntries(updated);
+    const sanitized = updated.map(sanitizeEntry);
+    setEntries(sanitized);
     try {
-      localStorage.setItem("demoEntries", JSON.stringify(updated));
+      localStorage.setItem("demoEntries", JSON.stringify(sanitized));
     } catch {
       // ignore storage errors
     }
@@ -155,7 +177,7 @@ export default function HotelDashboardPage() {
                     <td className="px-3 py-2">
                       {e.maskedSummary && e.idType ? (
                         <span className="text-sm text-zinc-700">
-                          {e.idType}: {e.maskedSummary}
+                          {e.idType}: {e.idType === "Aadhaar" ? maskAadhaar(e.maskedSummary) : e.maskedSummary}
                         </span>
                       ) : e.uploadedIdName ? (
                         <span className="text-sm text-zinc-600">{e.uploadedIdName}</span>

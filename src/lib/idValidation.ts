@@ -11,6 +11,15 @@ export type IdValidationResult = {
   words?: OcrWord[];
 };
 
+export function maskAadhaar(aadhaarNumber = ""): string {
+  const digits = aadhaarNumber.replace(/\D/g, "");
+  if (digits.length >= 4) {
+    const lastFour = digits.slice(-4);
+    return `XXXX XXXX ${lastFour}`;
+  }
+  return "XXXX XXXX XXXX";
+}
+
 async function fileToCanvas(file: File): Promise<HTMLCanvasElement> {
   const isPdf = file.type === "application/pdf";
   if (isPdf) {

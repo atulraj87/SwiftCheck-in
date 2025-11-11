@@ -4,6 +4,7 @@ import { Suspense, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { QRCodeCanvas as QRCode } from "qrcode.react";
 import { hmacHex } from "@/lib/hmac";
+import { maskAadhaar } from "@/lib/idValidation";
 
 export default function ConfirmationPage() {
   return (
@@ -21,6 +22,9 @@ function Content() {
   const arrival = params.get("arrival") ?? "—";
   const uploaded = typeof window !== "undefined" ? sessionStorage.getItem("uploadedIdName") : null;
   const maskedSummary = typeof window !== "undefined" ? sessionStorage.getItem("maskedIdSummary") : null;
+  const maskedIdType = typeof window !== "undefined" ? sessionStorage.getItem("maskedIdType") : null;
+  const safeMaskedSummary =
+    maskedIdType === "Aadhaar" && maskedSummary ? maskAadhaar(maskedSummary) : maskedSummary;
   const [qrValue, setQrValue] = useState("{}");
   const wifiNetwork = ref && ref !== "—" ? `NOVATAL-${ref.slice(-4).padStart(4, "0")}` : null;
   const wifiPassword = ref && ref !== "—" ? `${ref.toUpperCase()}2024` : null;
@@ -60,7 +64,9 @@ function Content() {
             </div>
             <div>
               <dt className="text-sm text-zinc-600">ID Upload</dt>
-              <dd className="text-base font-medium">{maskedSummary ? maskedSummary : uploaded ? uploaded : "Provided"}</dd>
+              <dd className="text-base font-medium">
+                {safeMaskedSummary ? safeMaskedSummary : uploaded ? uploaded : "Provided"}
+              </dd>
             </div>
           </dl>
 

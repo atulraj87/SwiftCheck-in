@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import jsQR from "jsqr";
+import { maskAadhaar } from "@/lib/idValidation";
 
 type Entry = {
   name: string;
@@ -18,6 +19,16 @@ type Entry = {
   status: string;
   createdAt: string;
 };
+
+function sanitizeEntry(entry: Entry): Entry {
+  if (entry.idType === "Aadhaar" && entry.maskedSummary) {
+    const masked = maskAadhaar(entry.maskedSummary);
+    if (masked !== entry.maskedSummary) {
+      return { ...entry, maskedSummary: masked };
+    }
+  }
+  return entry;
+}
 
 type ValidationResult = { ok: boolean; message: string; match?: Entry } | null;
 
@@ -42,7 +53,8 @@ function ValidateContent() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem("demoEntries");
-      setEntries(raw ? JSON.parse(raw) : []);
+      const parsed: Entry[] = raw ? JSON.parse(raw) : [];
+      setEntries(parsed.map(sanitizeEntry));
     } catch {
       setEntries([]);
     }
@@ -80,7 +92,11 @@ function ValidateContent() {
             return;
           }
           const match = entries.find((e) => e.ref === (parsed as any).ref && e.arrival === (parsed as any).arrival);
-          setResult(match ? { ok: true, message: "Booking found and validated.", match } : { ok: false, message: "No matching booking found in the dashboard." });
+          setResult(
+            match
+              ? { ok: true, message: "Booking found and validated.", match: sanitizeEntry(match) }
+              : { ok: false, message: "No matching booking found in the dashboard." }
+          );
         });
         return;
       }
@@ -88,17 +104,17 @@ function ValidateContent() {
       // fall through to simple validation
     }
     const match = entries.find((e) => e.ref === parsed.ref && e.arrival === parsed.arrival);
-    if (match) {
-      setResult({ ok: true, message: "Booking found and validated.", match });
-    } else {
-      setResult({ ok: false, message: "No matching booking found in the dashboard." });
-    }
+    setResult(
+      match
+        ? { ok: true, message: "Booking found and validated.", match: sanitizeEntry(match) }
+        : { ok: false, message: "No matching booking found in the dashboard." }
+    );
   }
 
   function handleApprove() {
     if (!result?.match) return;
     const updated = entries.map((entry) =>
-      entry.ref === result.match!.ref ? { ...entry, status: "Checked-in" } : entry
+      entry.ref === result.match!.ref ? sanitizeEntry({ ...entry, status: "Checked-in" }) : sanitizeEntry(entry)
     );
     setEntries(updated);
     try {
@@ -116,7 +132,7 @@ function ValidateContent() {
   function handleReject() {
     if (!result?.match) return;
     const updated = entries.map((entry) =>
-      entry.ref === result.match!.ref ? { ...entry, status: "Pending" } : entry
+      entry.ref === result.match!.ref ? sanitizeEntry({ ...entry, status: "Pending" }) : sanitizeEntry(entry)
     );
     setEntries(updated);
     try {
@@ -163,11 +179,13 @@ function ValidateContent() {
                   const parsed = JSON.parse(text);
                   
                   // Load entries if not already loaded
-                  let currentEntries = entries;
+                  let currentEntries = entries.length > 0 ? entries.map(sanitizeEntry) : [];
                   if (currentEntries.length === 0) {
                     try {
                       const raw = localStorage.getItem("demoEntries");
-                      currentEntries = raw ? JSON.parse(raw) : [];
+                      const parsed: Entry[] = raw ? JSON.parse(raw) : [];
+                      currentEntries = parsed.map(sanitizeEntry);
+                      setEntries(currentEntries);
                     } catch {
                       currentEntries = [];
                     }
@@ -297,7 +315,11 @@ function ValidateContent() {
                         </div>
                         <div>
                           <span className="text-zinc-600 text-sm">Masked ID Number:</span>
-                          <p className="font-medium mt-1">{result.match.maskedSummary}</p>
+                          <p className="font-medium mt-1">
+                            {result.match.idType === "Aadhaar" && result.match.maskedSummary
+                              ? maskAadhaar(result.match.maskedSummary)
+                              : result.match.maskedSummary}
+                          </p>
                         </div>
                         {result.match.maskedPreview && (
                           <div className="mt-3">

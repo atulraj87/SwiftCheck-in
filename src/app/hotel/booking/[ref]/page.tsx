@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { maskAadhaar } from "@/lib/idValidation";
 
 type Entry = {
   name: string;
@@ -18,6 +19,16 @@ type Entry = {
   status: string;
   createdAt: string;
 };
+
+function sanitizeEntry(entry: Entry): Entry {
+  if (entry.idType === "Aadhaar" && entry.maskedSummary) {
+    const masked = maskAadhaar(entry.maskedSummary);
+    if (masked !== entry.maskedSummary) {
+      return { ...entry, maskedSummary: masked };
+    }
+  }
+  return entry;
+}
 
 export default function BookingDetailsPage() {
   return (
@@ -37,9 +48,18 @@ function Content() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem("demoEntries");
-      const entries = raw ? JSON.parse(raw) : [];
-      const found = entries.find((e: Entry) => e.ref === ref);
+      const entries: Entry[] = raw ? JSON.parse(raw) : [];
+      const sanitized = entries.map(sanitizeEntry);
+      const found = sanitized.find((e: Entry) => e.ref === ref);
       setEntry(found || null);
+      const hasChanges = sanitized.some((item, index) => item !== entries[index]);
+      if (hasChanges) {
+        try {
+          localStorage.setItem("demoEntries", JSON.stringify(sanitized));
+        } catch {
+          // ignore storage errors
+        }
+      }
     } catch {
       setEntry(null);
     } finally {
@@ -50,12 +70,14 @@ function Content() {
   function updateStatus(newStatus: string) {
     setEntry((prev) => {
       if (!prev) return prev;
-      const updatedEntry = { ...prev, status: newStatus };
+      const updatedEntry = sanitizeEntry({ ...prev, status: newStatus });
       try {
-        const raw = localStorage.getItem("demoEntries");
-        const entries: Entry[] = raw ? JSON.parse(raw) : [];
-        const next = entries.map((item) => (item.ref === ref ? { ...item, status: newStatus } : item));
-        localStorage.setItem("demoEntries", JSON.stringify(next));
+      const raw = localStorage.getItem("demoEntries");
+      const entries: Entry[] = raw ? JSON.parse(raw) : [];
+      const next = entries.map((item) =>
+          item.ref === ref ? sanitizeEntry({ ...item, status: newStatus }) : sanitizeEntry(item)
+      );
+      localStorage.setItem("demoEntries", JSON.stringify(next));
       } catch {
         // ignore storage errors
       }
@@ -195,7 +217,9 @@ function Content() {
                 <p className="text-zinc-600">ID Type:</p>
                 <p className="font-medium mt-1">{entry.idType}</p>
                 <p className="text-zinc-600 mt-3">Masked ID Number:</p>
-                <p className="font-medium mt-1">{entry.maskedSummary}</p>
+                <p className="font-medium mt-1">
+                  {entry.idType === "Aadhaar" ? maskAadhaar(entry.maskedSummary) : entry.maskedSummary}
+                </p>
               </div>
               {entry.maskedPreview && (
                 <div className="mt-4">

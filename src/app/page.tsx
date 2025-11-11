@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import ReactCrop, { type Crop, type PixelCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-import { validateIdContent, type OcrWord } from "@/lib/idValidation";
+import { maskAadhaar, validateIdContent, type OcrWord } from "@/lib/idValidation";
 
 type MaskedPreviewResult = {
   dataUrl: string;
@@ -47,6 +47,9 @@ function Content() {
 
   const today = new Date().toISOString().split("T")[0];
 
+  const displayMaskedSummary =
+    idType === "Aadhaar" && maskedSummary ? maskAadhaar(maskedSummary) : maskedSummary;
+
   useEffect(() => {
     if (!isPrefilled) return;
     setFullName(params.get("name") ?? "");
@@ -83,6 +86,7 @@ function Content() {
     sessionStorage.removeItem("uploadedIdName");
     sessionStorage.removeItem("maskedIdPreview");
     sessionStorage.removeItem("maskedIdSummary");
+    sessionStorage.removeItem("maskedIdType");
   }
 
   function validateEmailFormat(value: string): boolean {
@@ -199,6 +203,7 @@ function Content() {
         sessionStorage.removeItem("uploadedIdName");
         sessionStorage.removeItem("maskedIdPreview");
         sessionStorage.removeItem("maskedIdSummary");
+        sessionStorage.removeItem("maskedIdType");
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
         }
@@ -209,10 +214,13 @@ function Content() {
       const masked = await createMaskedPreview(selected, idType, validation.extractedText, validation.words);
       setFile(selected);
       setMaskedPreview(masked.dataUrl);
-      setMaskedSummary(masked.summary ?? "");
+      const rawSummary = masked.summary ?? "";
+      const safeSummary = idType === "Aadhaar" && rawSummary ? maskAadhaar(rawSummary) : rawSummary;
+      setMaskedSummary(safeSummary);
       sessionStorage.setItem("uploadedIdName", selected.name);
       sessionStorage.setItem("maskedIdPreview", masked.dataUrl);
-      sessionStorage.setItem("maskedIdSummary", masked.summary ?? "");
+      sessionStorage.setItem("maskedIdSummary", safeSummary);
+      sessionStorage.setItem("maskedIdType", idType);
       setShowCamera(false);
     } catch (error) {
       console.error(error);
@@ -264,6 +272,8 @@ function Content() {
     try {
       const raw = localStorage.getItem("demoEntries");
       const entries = raw ? JSON.parse(raw) : [];
+      const persistedMaskedSummary =
+        idType === "Aadhaar" && maskedSummary ? maskAadhaar(maskedSummary) : maskedSummary;
       entries.unshift({
         name: fullName,
         ref: bookingRef,
@@ -273,7 +283,7 @@ function Content() {
         country,
         idType,
         maskedPreview,
-        maskedSummary,
+        maskedSummary: persistedMaskedSummary,
         uploadedIdName: file.name,
         status: "Booked",
         createdAt: new Date().toISOString(),
@@ -543,8 +553,8 @@ function Content() {
                   <img src={maskedPreview} alt="Masked ID preview" className="w-full object-contain" />
                 </div>
                 <p className="text-xs text-zinc-600">
-                  {maskedSummary
-                    ? `Masking applied: ${maskedSummary}`
+                  {displayMaskedSummary
+                    ? `Masking applied: ${displayMaskedSummary}`
                     : "Sensitive details automatically masked. Only this copy is shared with the hotel."}
                 </p>
               </div>
@@ -1001,8 +1011,8 @@ function deriveMaskedSummary(idType: string, text?: string): string | undefined 
       const match = cleaned.match(pattern);
       if (match) {
         const digits = match[0].replace(/[\s-]/g, "");
-        if (digits.length === 12) {
-          return `XXXX XXXX ${digits.slice(-4)}`;
+        if (digits.length >= 4) {
+          return maskAadhaar(digits);
         }
       }
     }
@@ -1064,7 +1074,7 @@ function extractIdNumber(
     const info = locateNumberFromWords(words, {
       minLength: 12,
       maxLength: 12,
-      maskFormatter: (digits) => `XXXX XXXX ${digits.slice(-4)}`,
+      maskFormatter: maskAadhaar,
       digitsOnly: true,
     });
     if (info) {
@@ -1075,7 +1085,7 @@ function extractIdNumber(
       const digits = match[0].replace(/[\s-]/g, "");
       if (digits.length === 12) {
         const boxes = collectSequentialBoxes(words, digits, { digitsOnly: true });
-        return { number: digits, masked: `XXXX XXXX ${digits.slice(-4)}`, boxes: boxes.length ? boxes : undefined };
+        return { number: digits, masked: maskAadhaar(digits), boxes: boxes.length ? boxes : undefined };
       }
     }
   }
