@@ -1247,35 +1247,44 @@ function collectSequentialBoxes(words: OcrWord[], value: string, options: { digi
   const normalizedTarget = options.digitsOnly ? value.replace(/\D/g, "") : value.replace(/\s+/g, "").toUpperCase();
   if (!normalizedTarget) return [];
 
-  let consumed = 0;
-  const segments: MaskBox[] = [];
+  const matches: MaskBox[] = [];
 
-  for (const word of words) {
-    const rawText = word.text ?? "";
-    const normalizedWord = options.digitsOnly ? rawText.replace(/\D/g, "") : rawText.replace(/\s+/g, "").toUpperCase();
-    if (!normalizedWord) {
-      continue;
-    }
-    const expected = normalizedTarget.slice(consumed, consumed + normalizedWord.length);
-    if (normalizedWord === expected) {
-      segments.push({
-        x: Math.max(0, word.bbox.x0),
-        y: Math.max(0, word.bbox.y0),
-        width: Math.max(1, word.bbox.x1 - word.bbox.x0),
-        height: Math.max(1, word.bbox.y1 - word.bbox.y0),
+  for (let start = 0; start < words.length; start += 1) {
+    let consumed = 0;
+    const segment: MaskBox[] = [];
+
+    for (let index = start; index < words.length; index += 1) {
+      const rawText = words[index].text ?? "";
+      const normalizedWord = options.digitsOnly ? rawText.replace(/\D/g, "") : rawText.replace(/\s+/g, "").toUpperCase();
+
+      if (!normalizedWord) {
+        if (consumed > 0) {
+          break;
+        }
+        continue;
+      }
+
+      const expected = normalizedTarget.slice(consumed, consumed + normalizedWord.length);
+      if (normalizedWord !== expected) {
+        break;
+      }
+
+      segment.push({
+        x: Math.max(0, words[index].bbox.x0),
+        y: Math.max(0, words[index].bbox.y0),
+        width: Math.max(1, words[index].bbox.x1 - words[index].bbox.x0),
+        height: Math.max(1, words[index].bbox.y1 - words[index].bbox.y0),
       });
       consumed += normalizedWord.length;
+
       if (consumed >= normalizedTarget.length) {
+        matches.push(mergeBoxes(segment));
         break;
       }
     }
   }
 
-  if (consumed < normalizedTarget.length) {
-    return [];
-  }
-
-  return collapseOverlappingBoxes(segments);
+  return matches.length ? collapseOverlappingBoxes(matches) : [];
 }
 
 function mergeBoxes(boxes: MaskBox[]): MaskBox {
