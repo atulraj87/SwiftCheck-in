@@ -44,8 +44,7 @@ function Content() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  // maskedSummary is already masked - display directly
-  const displayMaskedSummary = maskedSummary;
+  // Masking feature removed - no summary to display
 
   useEffect(() => {
     if (!isPrefilled) return;
@@ -189,12 +188,11 @@ function Content() {
       const masked = await createMaskedPreview(selected, idType, validation.extractedText, validation.words);
       setFile(selected);
       setMaskedPreview(masked.dataUrl);
-      // masked.summary is already masked from deriveMaskedSummary() - store directly
-      const safeSummary = masked.summary ?? "";
-      setMaskedSummary(safeSummary);
+      // No masking summary - feature removed
+      setMaskedSummary("");
       sessionStorage.setItem("uploadedIdName", selected.name);
       sessionStorage.setItem("maskedIdPreview", masked.dataUrl);
-      sessionStorage.setItem("maskedIdSummary", safeSummary);
+      sessionStorage.setItem("maskedIdSummary", "");
       sessionStorage.setItem("maskedIdType", idType);
       setShowCamera(false);
     } catch (error) {
@@ -247,8 +245,7 @@ function Content() {
     try {
       const raw = localStorage.getItem("demoEntries");
       const entries = raw ? JSON.parse(raw) : [];
-      // maskedSummary is already masked - store directly
-      const persistedMaskedSummary = maskedSummary;
+      // Masking feature removed - no summary to store
       entries.unshift({
         name: fullName,
         ref: bookingRef,
@@ -258,7 +255,7 @@ function Content() {
         country,
         idType,
         maskedPreview,
-        maskedSummary: persistedMaskedSummary,
+        maskedSummary: "",
         uploadedIdName: file.name,
         status: "Booked",
         createdAt: new Date().toISOString(),
@@ -528,9 +525,7 @@ function Content() {
                   <img src={maskedPreview} alt="Masked ID preview" className="w-full object-contain" />
                 </div>
                 <p className="text-xs text-zinc-600">
-                  {displayMaskedSummary
-                    ? `Masking applied: ${displayMaskedSummary}`
-                    : "Sensitive details automatically masked. Only this copy is shared with the hotel."}
+                  ID document uploaded successfully.
                 </p>
               </div>
             )}
@@ -976,69 +971,12 @@ async function createMaskedPreview(
   if (!ctx) {
     throw new Error("Canvas not supported");
   }
+  // Simply copy the original image without any masking or watermark
   ctx.drawImage(sourceCanvas, 0, 0);
-
-  const summary = deriveMaskedSummary(idType, extractedText);
-  const idNumberInfo = extractIdNumber(idType, extractedText, words);
-  
-  // Debug logging (remove in production)
-  if (idType === "Aadhaar") {
-    console.log("[Aadhaar Masking] Extracted text length:", extractedText?.length || 0);
-    console.log("[Aadhaar Masking] Words count:", words.length);
-    console.log("[Aadhaar Masking] ID Number Info:", idNumberInfo ? { number: idNumberInfo.number, masked: idNumberInfo.masked, boxesCount: idNumberInfo.boxes?.length || 0 } : null);
-    console.log("[Aadhaar Masking] Summary:", summary);
-  }
-
-  const watermarkStripeHeight = Math.max(40, Math.round(canvas.height * 0.12));
-
-  if (idNumberInfo) {
-    maskNumberRegions(ctx, canvas, idNumberInfo, watermarkStripeHeight + 12);
-  } else {
-    const availableHeight = Math.max(40, canvas.height - watermarkStripeHeight - 24);
-    const fallbackHeight = Math.max(52, Math.round(availableHeight * 0.22));
-    const fallbackWidth = Math.min(canvas.width * 0.76, canvas.width - 32);
-    const fallbackArea = {
-      x: Math.max(16, (canvas.width - fallbackWidth) / 2),
-      y: Math.min(Math.max(18, availableHeight * 0.45), Math.max(0, availableHeight - fallbackHeight - 12)),
-      width: fallbackWidth,
-      height: fallbackHeight,
-    };
-    drawMaskPanel(ctx, fallbackArea, summary ?? "Sensitive details masked", {
-      background: "rgba(0,0,0,0.58)",
-      textColor: "#FFFFFF",
-    });
-  }
-
-  if (idType === "Aadhaar") {
-    // Always try to mask fragments, extract digits from text if needed
-    let digitsToMask = idNumberInfo?.number;
-    if (!digitsToMask && extractedText) {
-      const digitMatch = extractedText.replace(/\D/g, "").match(/\d{12}/);
-      if (digitMatch) {
-        digitsToMask = digitMatch[0];
-      }
-    }
-    
-    // Always call maskAadhaarFragments - it will extract digits if needed
-    maskAadhaarFragments(ctx, canvas, words, {
-      originalDigits: digitsToMask,
-      excludeBoxes: idNumberInfo?.boxes ?? [],
-    });
-  }
-
-  // Add watermark stripe at bottom
-  ctx.fillStyle = "rgba(46, 62, 52, 0.85)";
-  ctx.fillRect(0, canvas.height - watermarkStripeHeight, canvas.width, watermarkStripeHeight);
-
-  ctx.fillStyle = "#F3F1ED";
-  ctx.font = `${Math.max(16, Math.round(canvas.width * 0.035))}px "Segoe UI", sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("Masked Copy — For Hotel Verification Only", canvas.width / 2, canvas.height - watermarkStripeHeight / 2);
 
   return {
     dataUrl: canvas.toDataURL("image/jpeg", 0.85),
-    summary,
+    summary: undefined,
   };
 }
 
