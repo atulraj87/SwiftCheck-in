@@ -1213,7 +1213,7 @@ function maskNumberRegions(
   reservedBottom = 0
 ) {
   const style: NumberMaskStyle = {
-    background: "rgba(17, 24, 39, 0.92)",
+    background: "rgba(17, 24, 39, 1.0)", // Fully opaque to completely hide the original text
     textColor: "#F9FAFB",
     accentColor: "#FBBF24",
     shadowColor: "rgba(15, 23, 42, 0.35)",
@@ -1256,7 +1256,7 @@ function maskAadhaarFragments(
   const seen = new Set<string>();
 
   const style: NumberMaskStyle = {
-    background: "rgba(17, 24, 39, 0.92)",
+    background: "rgba(17, 24, 39, 1.0)", // Fully opaque to completely hide the original text
     textColor: "#F9FAFB",
     accentColor: "#FBBF24",
     shadowColor: "rgba(15, 23, 42, 0.35)",
@@ -1365,6 +1365,8 @@ function drawNumberMask(
   info: { number: string; masked: string },
   style: NumberMaskStyle
 ) {
+  // Pure redaction: just cover the original text with a solid overlay
+  // No text should be displayed on the overlay - just hide the original ID number
   ctx.save();
   const radius = Math.min(area.height / 2, Math.max(12, area.height * 0.4));
   ctx.shadowColor = style.shadowColor;
@@ -1373,56 +1375,6 @@ function drawNumberMask(
   ctx.fillStyle = style.background;
   ctx.fill();
   ctx.shadowBlur = 0;
-
-  const paddingX = Math.max(18, area.height * 0.38);
-  const maxTextWidth = area.width - paddingX * 2;
-  if (maxTextWidth <= 0) {
-    ctx.restore();
-    return;
-  }
-
-  const segments = formatMaskLabel(info.masked, info.number);
-  let fontSize = Math.max(18, area.height * 0.58);
-  fontSize = fitFontSize(ctx, segments.combined, maxTextWidth, fontSize);
-  ctx.font = `600 ${fontSize}px "Segoe UI", Arial, sans-serif`;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
-
-  const centerY = area.y + area.height / 2;
-  let cursorX = area.x + paddingX;
-
-  if (segments.maskedPart) {
-    ctx.fillStyle = style.textColor;
-    ctx.fillText(segments.maskedPart, cursorX, centerY);
-    cursorX += ctx.measureText(segments.maskedPart).width;
-  }
-
-  if (segments.tail) {
-    if (segments.maskedPart) {
-      cursorX += Math.max(fontSize * 0.15, 8);
-    }
-    const tailWidth = ctx.measureText(segments.tail).width;
-    const highlightPaddingX = Math.max(8, fontSize * 0.22);
-    const highlightPaddingY = Math.max(6, fontSize * 0.3);
-    const highlightHeight = fontSize + highlightPaddingY;
-    const highlightY = centerY - highlightHeight / 2;
-    const highlightX = cursorX - highlightPaddingX * 0.5;
-
-    ctx.fillStyle = style.highlightBackground;
-    drawRoundedRectPath(
-      ctx,
-      highlightX,
-      highlightY,
-      tailWidth + highlightPaddingX,
-      highlightHeight,
-      Math.min(12, highlightHeight / 2)
-    );
-    ctx.fill();
-
-    ctx.fillStyle = style.accentColor;
-    ctx.fillText(segments.tail, cursorX, centerY);
-  }
-
   ctx.restore();
 }
 
@@ -1430,7 +1382,7 @@ function paintRedaction(ctx: CanvasRenderingContext2D, area: MaskBox) {
   ctx.save();
   const radius = Math.min(area.height / 2, Math.max(10, area.height * 0.45));
   drawRoundedRectPath(ctx, area.x, area.y, area.width, area.height, radius);
-  ctx.fillStyle = "rgba(17, 24, 39, 0.92)";
+  ctx.fillStyle = "rgba(17, 24, 39, 1.0)"; // Fully opaque to completely hide the original text
   ctx.fill();
   ctx.restore();
 }
