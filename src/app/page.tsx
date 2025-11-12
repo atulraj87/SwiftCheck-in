@@ -881,6 +881,17 @@ function extractIdNumber(
         };
       }
     }
+    
+    // Additional fallback: Extract any 12-digit sequence from full text
+    const fullTextDigits = cleaned.replace(/\D/g, "");
+    const twelveDigitMatch = fullTextDigits.match(/\d{12}/);
+    if (twelveDigitMatch) {
+      return {
+        number: twelveDigitMatch[0],
+        masked: maskID("Aadhaar", twelveDigitMatch[0]),
+        boxes: undefined, // Will use fallback masking in maskNumberRegions
+      };
+    }
   }
   if (idType === "Passport") {
     const info = locateNumberFromWords(words, {
@@ -969,6 +980,14 @@ async function createMaskedPreview(
 
   const summary = deriveMaskedSummary(idType, extractedText);
   const idNumberInfo = extractIdNumber(idType, extractedText, words);
+  
+  // Debug logging (remove in production)
+  if (idType === "Aadhaar") {
+    console.log("[Aadhaar Masking] Extracted text length:", extractedText?.length || 0);
+    console.log("[Aadhaar Masking] Words count:", words.length);
+    console.log("[Aadhaar Masking] ID Number Info:", idNumberInfo ? { number: idNumberInfo.number, masked: idNumberInfo.masked, boxesCount: idNumberInfo.boxes?.length || 0 } : null);
+    console.log("[Aadhaar Masking] Summary:", summary);
+  }
 
   const watermarkStripeHeight = Math.max(40, Math.round(canvas.height * 0.12));
 
@@ -991,8 +1010,18 @@ async function createMaskedPreview(
   }
 
   if (idType === "Aadhaar") {
+    // Always try to mask fragments, extract digits from text if needed
+    let digitsToMask = idNumberInfo?.number;
+    if (!digitsToMask && extractedText) {
+      const digitMatch = extractedText.replace(/\D/g, "").match(/\d{12}/);
+      if (digitMatch) {
+        digitsToMask = digitMatch[0];
+      }
+    }
+    
+    // Always call maskAadhaarFragments - it will extract digits if needed
     maskAadhaarFragments(ctx, canvas, words, {
-      originalDigits: idNumberInfo?.number,
+      originalDigits: digitsToMask,
       excludeBoxes: idNumberInfo?.boxes ?? [],
     });
   }
@@ -1235,7 +1264,15 @@ function maskNumberRegions(
   const boxes = info.boxes && info.boxes.length > 0 ? info.boxes : [];
 
   if (boxes.length === 0) {
-    // Fallback: if no boxes found, don't draw anything
+    // CRITICAL FIX: If no boxes found, still mask using a fallback area
+    // This ensures the ID is masked even if OCR didn't find exact boxes
+    const fallbackArea: MaskBox = {
+      x: Math.max(0, canvas.width * 0.15),
+      y: Math.max(0, canvas.height * 0.35),
+      width: Math.min(canvas.width * 0.7, canvas.width - 30),
+      height: Math.max(50, canvas.height * 0.12),
+    };
+    drawNumberMask(ctx, fallbackArea, info, style);
     return;
   }
 
@@ -1261,7 +1298,21 @@ function maskAadhaarFragments(
   options: { originalDigits?: string; excludeBoxes?: MaskBox[] } = {}
 ) {
   if (!words.length) return;
-  const digitsTarget = options.originalDigits?.replace(/\D/g, "") ?? "";
+  let digitsTarget = options.originalDigits?.replace(/\D/g, "") ?? "";
+  
+  // If no digits provided, try to extract from words
+  if (!digitsTarget || digitsTarget.length !== 12) {
+    let accumulated = "";
+    for (const word of words) {
+      const wordDigits = (word.text || "").replace(/\D/g, "");
+      accumulated += wordDigits;
+      if (accumulated.length >= 12) {
+        digitsTarget = accumulated.slice(0, 12);
+        break;
+      }
+    }
+  }
+  
   if (!digitsTarget || digitsTarget.length !== 12) return;
   
   const excludedBoxes = options.excludeBoxes ?? [];
