@@ -36,18 +36,18 @@ export interface MaskingRule {
  * Easily extensible for new ID types and country-specific formats
  */
 export const ID_MASKING_RULES: Record<string, MaskingRule> = {
-  // Aadhaar (India): 12 digits, show last 4
+  // Aadhaar (India): 12 digits, show last 4 (format: XXXXXXXX9620)
   Aadhaar: {
     pattern: /^\d{4}\s?\d{4}\s?\d{4}$/,
     mask: (value: string) => {
       const digits = value.replace(/\D/g, "");
       if (digits.length === 12) {
-        return `XXXX XXXX ${digits.slice(8, 12)}`;
+        return `XXXXXXXX${digits.slice(8, 12)}`;
       }
       return defaultMask(value, 4);
     },
     visibleChars: 4,
-    preserveFormat: true,
+    preserveFormat: false,
   },
 
   // Passport: Format varies, typically show last 2-4 chars

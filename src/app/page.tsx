@@ -1267,7 +1267,7 @@ function maskAadhaarFragments(
   
   const excludedBoxes = options.excludeBoxes ?? [];
   const seen = new Set<string>();
-  const maskedValue = maskID("Aadhaar", digitsTarget); // Format: "XXXX XXXX 9620"
+  const maskedValue = maskID("Aadhaar", digitsTarget); // Format: "XXXXXXXX9620"
 
   const style: NumberMaskStyle = {
     background: "#FFFFFF",
@@ -1411,8 +1411,8 @@ function drawNumberMask(
   );
   
   // Now draw the masked text in the same location
-  // Format: "xxxx xxxx 9620" - first 8 digits masked, last 4 visible (lowercase x like sample)
-  const maskedText = info.masked.toLowerCase(); // Convert "XXXX XXXX 9620" to "xxxx xxxx 9620"
+  // Format: "XXXXXXXX9620" - first 8 digits masked, last 4 visible
+  const maskedText = info.masked.toLowerCase(); // Convert "XXXXXXXX9620" to "xxxxxxxx9620" for display
   
   if (!maskedText || maskedText.trim().length === 0) {
     ctx.restore();

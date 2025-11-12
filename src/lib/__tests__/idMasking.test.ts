@@ -9,13 +9,13 @@ import { maskID, validateIDFormat, registerIDType, getMaskingRule, type IDType }
 describe("maskID - Generic ID Masking", () => {
   describe("Aadhaar (India)", () => {
     it("should mask Aadhaar number showing last 4 digits", () => {
-      expect(maskID("Aadhaar", "123456789012")).toBe("XXXX XXXX 9012");
-      expect(maskID("Aadhaar", "987654321098")).toBe("XXXX XXXX 1098");
+      expect(maskID("Aadhaar", "123456789012")).toBe("XXXXXXXX9012");
+      expect(maskID("Aadhaar", "987654321098")).toBe("XXXXXXXX1098");
     });
 
     it("should handle Aadhaar with spaces", () => {
-      expect(maskID("Aadhaar", "1234 5678 9012")).toBe("XXXX XXXX 9012");
-      expect(maskID("Aadhaar", "9876 5432 1098")).toBe("XXXX XXXX 1098");
+      expect(maskID("Aadhaar", "1234 5678 9012")).toBe("XXXXXXXX9012");
+      expect(maskID("Aadhaar", "9876 5432 1098")).toBe("XXXXXXXX1098");
     });
 
     it("should handle short Aadhaar numbers", () => {
