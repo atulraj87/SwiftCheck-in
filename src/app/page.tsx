@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { maskAadhaar, validateIdContent, type OcrWord } from "@/lib/idValidation";
+import { maskID } from "@/lib/idMasking";
 
 type MaskedPreviewResult = {
   dataUrl: string;
@@ -44,7 +45,7 @@ function Content() {
   const today = new Date().toISOString().split("T")[0];
 
   const displayMaskedSummary =
-    idType === "Aadhaar" && maskedSummary ? maskAadhaar(maskedSummary) : maskedSummary;
+    maskedSummary ? maskID(idType, maskedSummary) : maskedSummary;
 
   useEffect(() => {
     if (!isPrefilled) return;
@@ -189,7 +190,8 @@ function Content() {
       setFile(selected);
       setMaskedPreview(masked.dataUrl);
       const rawSummary = masked.summary ?? "";
-      const safeSummary = idType === "Aadhaar" && rawSummary ? maskAadhaar(rawSummary) : rawSummary;
+      // Apply generic masking at upload handler level - raw IDs never stored
+      const safeSummary = rawSummary ? maskID(idType, rawSummary) : rawSummary;
       setMaskedSummary(safeSummary);
       sessionStorage.setItem("uploadedIdName", selected.name);
       sessionStorage.setItem("maskedIdPreview", masked.dataUrl);
@@ -246,8 +248,8 @@ function Content() {
     try {
       const raw = localStorage.getItem("demoEntries");
       const entries = raw ? JSON.parse(raw) : [];
-      const persistedMaskedSummary =
-        idType === "Aadhaar" && maskedSummary ? maskAadhaar(maskedSummary) : maskedSummary;
+      // Ensure masking is applied before persistence - raw IDs never stored
+      const persistedMaskedSummary = maskedSummary ? maskID(idType, maskedSummary) : maskedSummary;
       entries.unshift({
         name: fullName,
         ref: bookingRef,
@@ -762,6 +764,10 @@ async function canvasFromFile(file: File): Promise<HTMLCanvasElement> {
 function deriveMaskedSummary(idType: string, text?: string): string | undefined {
   if (!text) return undefined;
   const cleaned = text.replace(/\s+/g, " ");
+  
+  // Extract ID number patterns for different ID types
+  let extractedId: string | null = null;
+  
   if (idType === "Aadhaar") {
     // Try multiple patterns: with spaces, without spaces, or any 12-digit sequence
     const patterns = [
@@ -776,52 +782,54 @@ function deriveMaskedSummary(idType: string, text?: string): string | undefined 
       if (match) {
         const digits = match[0].replace(/[\s-]/g, "");
         if (digits.length >= 4) {
-          return maskAadhaar(digits);
+          extractedId = digits;
+          break;
         }
       }
     }
-    return "XXXX XXXX XXXX";
-  }
-  if (idType === "Passport") {
-    const match = cleaned.match(/\b[A-Z][0-9]{7}\b/);
+  } else if (idType === "Passport") {
+    const match = cleaned.match(/\b[A-Z][0-9]{7,9}\b/);
     if (match) {
-      const value = match[0];
-      return `${value[0]}XXXXXXX`;
+      extractedId = match[0];
     }
-    return "PXXXXXXX";
-  }
-  if (idType === "Emirates ID") {
-    const match = cleaned.match(/\b784-\d{4}-\d{7}-\d\b/);
+  } else if (idType === "Emirates ID") {
+    const match = cleaned.match(/\b784-?\d{4}-?\d{7}-?\d\b/);
     if (match) {
-      const parts = match[0].split("-");
-      return `784-XXXX-XXXXXXX-${parts[3]}`;
+      extractedId = match[0];
     }
-    return "784-XXXX-XXXXXXX-X";
-  }
-  if (idType === "Driving Licence" || idType === "Driver License") {
-    const match = cleaned.match(/\b[A-Z0-9]{8,}\b/);
-    if (match) {
-      const value = match[0];
-      return `${"X".repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
-    }
-    return "XXXX XXXX";
-  }
-  if (idType === "State ID") {
+  } else if (idType === "Driving Licence" || idType === "Driver License") {
     const match = cleaned.match(/\b[A-Z0-9]{6,}\b/);
     if (match) {
-      const value = match[0];
-      return `${"X".repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
+      extractedId = match[0];
     }
-    return "XXXX XXXX";
-  }
-  if (idType === "BRP") {
+  } else if (idType === "State ID") {
+    const match = cleaned.match(/\b[A-Z0-9]{6,}\b/);
+    if (match) {
+      extractedId = match[0];
+    }
+  } else if (idType === "BRP") {
     const match = cleaned.match(/\b[A-Z]{2}\d{7}\b/);
     if (match) {
-      const value = match[0];
-      return `${value.slice(0, 2)}XXXXXXX`;
+      extractedId = match[0];
     }
-    return "XX XXXXXXX";
+  } else if (idType === "Social Security Number") {
+    const match = cleaned.match(/\b\d{3}-?\d{2}-?\d{4}\b/);
+    if (match) {
+      extractedId = match[0];
+    }
   }
+  
+  // Use generic masking function for all ID types
+  if (extractedId) {
+    return maskID(idType, extractedId);
+  }
+  
+  // Fallback: try to find any numeric/alphanumeric sequence
+  const fallbackMatch = cleaned.match(/\b[A-Z0-9]{8,}\b/);
+  if (fallbackMatch) {
+    return maskID(idType, fallbackMatch[0]);
+  }
+  
   return undefined;
 }
 
@@ -840,7 +848,7 @@ function extractIdNumber(
     const info = locateNumberFromWords(words, {
       minLength: 12,
       maxLength: 12,
-      maskFormatter: maskAadhaar,
+      maskFormatter: (value) => maskID("Aadhaar", value),
       digitsOnly: true,
     });
     
@@ -869,7 +877,7 @@ function extractIdNumber(
         const boxes = collectSequentialBoxes(words, digits, { digitsOnly: true });
         return {
           number: digits,
-          masked: maskAadhaar(digits),
+          masked: maskID("Aadhaar", digits),
           boxes: boxes.length > 0 ? boxes : undefined, // Return all boxes without collapsing
         };
       }
@@ -1259,7 +1267,7 @@ function maskAadhaarFragments(
   
   const excludedBoxes = options.excludeBoxes ?? [];
   const seen = new Set<string>();
-  const maskedValue = maskAadhaar(digitsTarget); // Format: "XXXX XXXX 9620"
+  const maskedValue = maskID("Aadhaar", digitsTarget); // Format: "XXXX XXXX 9620"
 
   const style: NumberMaskStyle = {
     background: "#FFFFFF",

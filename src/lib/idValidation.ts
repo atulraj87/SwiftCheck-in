@@ -1,3 +1,5 @@
+import { maskID } from "./idMasking";
+
 export type OcrWord = {
   text: string;
   bbox: { x0: number; y0: number; x1: number; y1: number };
@@ -11,12 +13,12 @@ export type IdValidationResult = {
   words?: OcrWord[];
 };
 
+/**
+ * @deprecated Use maskID("Aadhaar", value) instead
+ * Kept for backward compatibility
+ */
 export function maskAadhaar(aadhaar = ""): string {
-  const digits = aadhaar.replace(/\D/g, "");
-  if (digits.length === 12) {
-    return `XXXX XXXX ${digits.slice(8, 12)}`;
-  }
-  return aadhaar;
+  return maskID("Aadhaar", aadhaar);
 }
 
 async function fileToCanvas(file: File): Promise<HTMLCanvasElement> {

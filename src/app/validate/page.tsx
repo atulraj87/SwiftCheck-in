@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import jsQR from "jsqr";
-import { maskAadhaar } from "@/lib/idValidation";
+import { maskID } from "@/lib/idMasking";
 
 type Entry = {
   name: string;
@@ -21,8 +21,9 @@ type Entry = {
 };
 
 function sanitizeEntry(entry: Entry): Entry {
-  if (entry.idType === "Aadhaar" && entry.maskedSummary) {
-    const masked = maskAadhaar(entry.maskedSummary);
+  // Apply generic masking to ensure no raw IDs are displayed
+  if (entry.idType && entry.maskedSummary) {
+    const masked = maskID(entry.idType, entry.maskedSummary);
     if (masked !== entry.maskedSummary) {
       return { ...entry, maskedSummary: masked };
     }
