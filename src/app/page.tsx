@@ -1390,26 +1390,39 @@ function drawNumberMask(
   // Format: "xxxx xxxx 9620" (like the sample image)
   ctx.save();
   
-  // First, cover the original text with a white/background-colored rectangle
+  // First, cover the original text with a white rectangle
+  // Use composite operation to ensure it covers everything
+  ctx.globalCompositeOperation = "source-over";
   ctx.fillStyle = "#FFFFFF"; // White background to cover original text
-  ctx.fillRect(area.x, area.y, area.width, area.height);
+  // Draw slightly larger rectangle to ensure full coverage
+  ctx.fillRect(
+    Math.max(0, area.x - 2), 
+    Math.max(0, area.y - 2), 
+    area.width + 4, 
+    area.height + 4
+  );
   
   // Now draw the masked text in the same location
   // Format: "xxxx xxxx 9620" - first 8 digits masked, last 4 visible (lowercase x like sample)
   const maskedText = info.masked.toLowerCase(); // Convert "XXXX XXXX 9620" to "xxxx xxxx 9620"
   
+  if (!maskedText || maskedText.trim().length === 0) {
+    ctx.restore();
+    return;
+  }
+  
   // Calculate font size based on box height - match the original text size
   const fontSize = Math.max(area.height * 0.7, 16);
   ctx.font = `bold ${fontSize}px "Segoe UI", Arial, sans-serif`;
   ctx.fillStyle = "#000000"; // Black text like the original
-  ctx.textAlign = "left";
+  ctx.textAlign = "center"; // Center alignment for better positioning
   ctx.textBaseline = "middle";
   
-  // Center the text horizontally in the box
-  const textWidth = ctx.measureText(maskedText).width;
-  const textX = area.x + (area.width - textWidth) / 2;
+  // Center the text in the box
+  const textX = area.x + area.width / 2;
   const textY = area.y + area.height / 2;
   
+  // Draw the masked text
   ctx.fillText(maskedText, textX, textY);
   
   ctx.restore();
