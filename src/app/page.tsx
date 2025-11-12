@@ -1217,8 +1217,8 @@ function maskNumberRegions(
   reservedBottom = 0
 ) {
   const style: NumberMaskStyle = {
-    background: "rgba(17, 24, 39, 1.0)", // Fully opaque to completely hide the original text
-    textColor: "#F9FAFB",
+    background: "#FFFFFF", // White background for text-based masking
+    textColor: "#000000", // Black text
     accentColor: "#FBBF24",
     shadowColor: "rgba(15, 23, 42, 0.35)",
     highlightBackground: "rgba(251, 191, 36, 0.18)",
@@ -1228,23 +1228,23 @@ function maskNumberRegions(
   const boxes = info.boxes && info.boxes.length > 0 ? info.boxes : [];
 
   if (boxes.length === 0) {
-    const fallbackWidth = Math.min(canvas.width * 0.74, canvas.width - 24);
-    const fallbackHeight = Math.max(44, Math.round(canvas.height * 0.08));
-    const fallbackArea = {
-      x: Math.max(12, (canvas.width - fallbackWidth) / 2),
-      y: Math.max(16, Math.min(usableHeight - fallbackHeight - 12, canvas.height * 0.52)),
-      width: fallbackWidth,
-      height: fallbackHeight,
-    };
-    drawNumberMask(ctx, fallbackArea, info, style);
+    // Fallback: if no boxes found, don't draw anything
     return;
   }
 
-  boxes
-    .map((box) => adjustMaskArea(box, canvas.width, usableHeight))
-    .forEach((area) => {
-      drawNumberMask(ctx, area, info, style);
-    });
+  // Mask each occurrence by covering original text and drawing masked text
+  boxes.forEach((box) => {
+    // Use the original box dimensions, but add small padding for better coverage
+    const paddingX = Math.max(4, box.width * 0.1);
+    const paddingY = Math.max(2, box.height * 0.15);
+    const maskArea: MaskBox = {
+      x: Math.max(0, box.x - paddingX),
+      y: Math.max(0, box.y - paddingY),
+      width: box.width + paddingX * 2,
+      height: box.height + paddingY * 2,
+    };
+    drawNumberMask(ctx, maskArea, info, style);
+  });
 }
 
 function maskAadhaarFragments(
@@ -1255,82 +1255,74 @@ function maskAadhaarFragments(
 ) {
   if (!words.length) return;
   const digitsTarget = options.originalDigits?.replace(/\D/g, "") ?? "";
-  if (!digitsTarget || digitsTarget.length !== 12) return; // Only process if we have a valid 12-digit Aadhaar number
+  if (!digitsTarget || digitsTarget.length !== 12) return;
   
-  // Get all boxes that were already masked by maskNumberRegions (these are expanded)
-  const excludedOriginalBoxes = options.excludeBoxes ?? [];
-  // Expand excluded boxes to match what was actually masked, so we can properly check overlaps
-  const excludedExpandedBoxes = excludedOriginalBoxes.map(box => 
-    adjustMaskArea(box, canvas.width, canvas.height)
-  );
-  
+  const excludedBoxes = options.excludeBoxes ?? [];
   const seen = new Set<string>();
+  const maskedValue = maskAadhaar(digitsTarget); // Format: "XXXX XXXX 9620"
 
   const style: NumberMaskStyle = {
-    background: "rgba(17, 24, 39, 1.0)", // Fully opaque to completely hide the original text
-    textColor: "#F9FAFB",
+    background: "#FFFFFF",
+    textColor: "#000000",
     accentColor: "#FBBF24",
     shadowColor: "rgba(15, 23, 42, 0.35)",
     highlightBackground: "rgba(251, 191, 36, 0.18)",
   };
 
-  const maskedValue = maskAadhaar(digitsTarget);
-
   const keyForBox = (box: MaskBox) =>
     `${Math.round(box.x)}-${Math.round(box.y)}-${Math.round(box.width)}-${Math.round(box.height)}`;
 
-  // Check if a box overlaps with any already-masked (expanded) boxes
-  const overlapsExcluded = (box: MaskBox) => {
-    return excludedExpandedBoxes.some((ex) => boxesOverlap(ex, box));
+  // Check if a box overlaps significantly with already-masked boxes
+  const hasSignificantOverlap = (box: MaskBox): boolean => {
+    return excludedBoxes.some((ex) => {
+      const overlapX = Math.max(0, Math.min(box.x + box.width, ex.x + ex.width) - Math.max(box.x, ex.x));
+      const overlapY = Math.max(0, Math.min(box.y + box.height, ex.y + ex.height) - Math.max(box.y, ex.y));
+      const overlapArea = overlapX * overlapY;
+      const boxArea = box.width * box.height;
+      return overlapArea > boxArea * 0.3; // 30% overlap threshold
+    });
   };
 
-  // Function to mask a box if it hasn't been masked already
-  const applyMask = (box: MaskBox) => {
-    const expanded = adjustMaskArea(box, canvas.width, canvas.height);
-    
-    // Check if this expanded box overlaps with any already-masked expanded boxes
-    // Use a more lenient check: only skip if there's significant overlap (not just touching)
-    const hasSignificantOverlap = excludedExpandedBoxes.some((ex) => {
-      const overlapX = Math.max(0, Math.min(expanded.x + expanded.width, ex.x + ex.width) - Math.max(expanded.x, ex.x));
-      const overlapY = Math.max(0, Math.min(expanded.y + expanded.height, ex.y + ex.height) - Math.max(expanded.y, ex.y));
-      const overlapArea = overlapX * overlapY;
-      const expandedArea = expanded.width * expanded.height;
-      // Skip only if more than 50% of this box is already covered
-      return overlapArea > expandedArea * 0.5;
-    });
-    
-    if (hasSignificantOverlap) {
+  // Function to mask a box with text-based masking
+  const applyTextMask = (box: MaskBox) => {
+    if (hasSignificantOverlap(box)) {
       return;
     }
     
-    const key = keyForBox(expanded);
+    const key = keyForBox(box);
     if (seen.has(key)) {
       return;
     }
     seen.add(key);
-    drawNumberMask(ctx, expanded, { number: digitsTarget, masked: maskedValue }, style);
+    
+    // Add small padding for better coverage
+    const paddingX = Math.max(4, box.width * 0.1);
+    const paddingY = Math.max(2, box.height * 0.15);
+    const maskArea: MaskBox = {
+      x: Math.max(0, box.x - paddingX),
+      y: Math.max(0, box.y - paddingY),
+      width: box.width + paddingX * 2,
+      height: box.height + paddingY * 2,
+    };
+    
+    drawNumberMask(ctx, maskArea, { number: digitsTarget, masked: maskedValue }, style);
   };
 
-  // Find ALL occurrences of the Aadhaar number using collectSequentialBoxes
-  // This should find all instances, including ones that might have been missed
+  // Find ALL occurrences of the Aadhaar number
   const allSequenceBoxes = collectSequentialBoxes(words, digitsTarget, { digitsOnly: true });
   
-  // Mask each occurrence that wasn't already masked
-  allSequenceBoxes.forEach(applyMask);
+  // Mask each occurrence
+  allSequenceBoxes.forEach(applyTextMask);
 
-  // Also check individual words for fragments that might contain parts of the ID
-  // This is a fallback for cases where OCR didn't properly segment the number
+  // Also check individual words for fragments containing parts of the ID
   words.forEach((word) => {
     const raw = word.text ? String(word.text) : "";
     if (!raw.trim()) return;
     const digitsOnly = raw.replace(/\D/g, "");
     
-    // Check if this word contains a significant portion of the target digits
-    // We want to mask words that contain 6+ consecutive digits from the target
     if (digitsOnly.length < 6) return;
     
     // Check if this word's digits are part of the target Aadhaar number
-    // by checking if a substring of the target matches this word's digits
     let isPartOfTarget = false;
     for (let i = 0; i <= digitsTarget.length - digitsOnly.length; i++) {
       if (digitsTarget.slice(i, i + digitsOnly.length) === digitsOnly) {
@@ -1348,14 +1340,12 @@ function maskAadhaarFragments(
       height: Math.max(1, word.bbox.y1 - word.bbox.y0),
     };
 
-    // Check if this word box overlaps with any already-masked boxes (using original boxes for word-level check)
-    const overlapsOriginal = excludedOriginalBoxes.some((box) => boxesOverlap(box, base));
-    if (overlapsOriginal) {
+    // Check if already masked
+    if (excludedBoxes.some((box) => boxesOverlap(box, base))) {
       return;
     }
 
-    // Mask this word fragment
-    applyMask(base);
+    applyTextMask(base);
   });
 }
 
@@ -1396,25 +1386,40 @@ function drawNumberMask(
   info: { number: string; masked: string },
   style: NumberMaskStyle
 ) {
-  // Pure redaction: just cover the original text with a solid overlay
-  // No text should be displayed on the overlay - just hide the original ID number
+  // Text-based masking: cover original text with background, then draw masked text
+  // Format: "xxxx xxxx 9620" (like the sample image)
   ctx.save();
-  const radius = Math.min(area.height / 2, Math.max(12, area.height * 0.4));
-  ctx.shadowColor = style.shadowColor;
-  ctx.shadowBlur = Math.max(6, area.height * 0.25);
-  drawRoundedRectPath(ctx, area.x, area.y, area.width, area.height, radius);
-  ctx.fillStyle = style.background;
-  ctx.fill();
-  ctx.shadowBlur = 0;
+  
+  // First, cover the original text with a white/background-colored rectangle
+  ctx.fillStyle = "#FFFFFF"; // White background to cover original text
+  ctx.fillRect(area.x, area.y, area.width, area.height);
+  
+  // Now draw the masked text in the same location
+  // Format: "xxxx xxxx 9620" - first 8 digits masked, last 4 visible (lowercase x like sample)
+  const maskedText = info.masked.toLowerCase(); // Convert "XXXX XXXX 9620" to "xxxx xxxx 9620"
+  
+  // Calculate font size based on box height - match the original text size
+  const fontSize = Math.max(area.height * 0.7, 16);
+  ctx.font = `bold ${fontSize}px "Segoe UI", Arial, sans-serif`;
+  ctx.fillStyle = "#000000"; // Black text like the original
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  
+  // Center the text horizontally in the box
+  const textWidth = ctx.measureText(maskedText).width;
+  const textX = area.x + (area.width - textWidth) / 2;
+  const textY = area.y + area.height / 2;
+  
+  ctx.fillText(maskedText, textX, textY);
+  
   ctx.restore();
 }
 
 function paintRedaction(ctx: CanvasRenderingContext2D, area: MaskBox) {
+  // Simple white rectangle to cover text (for non-Aadhaar IDs)
   ctx.save();
-  const radius = Math.min(area.height / 2, Math.max(10, area.height * 0.45));
-  drawRoundedRectPath(ctx, area.x, area.y, area.width, area.height, radius);
-  ctx.fillStyle = "rgba(17, 24, 39, 1.0)"; // Fully opaque to completely hide the original text
-  ctx.fill();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(area.x, area.y, area.width, area.height);
   ctx.restore();
 }
 
