@@ -849,10 +849,12 @@ function extractIdNumber(
       // This ensures we mask the number everywhere it appears in the document
       const allBoxes = collectSequentialBoxes(words, info.number, { digitsOnly: true });
       if (allBoxes.length > 0) {
+        // Don't collapse overlapping boxes here - let maskNumberRegions handle each occurrence separately
+        // Only collapse boxes that are truly duplicates (same position), not separate occurrences
         return {
           number: info.number,
           masked: info.masked,
-          boxes: collapseOverlappingBoxes(allBoxes),
+          boxes: allBoxes, // Return all boxes without collapsing - each occurrence should be masked separately
         };
       }
       // Fallback: use boxes from locateNumberFromWords if collectSequentialBoxes found nothing
@@ -868,7 +870,7 @@ function extractIdNumber(
         return {
           number: digits,
           masked: maskAadhaar(digits),
-          boxes: boxes.length > 0 ? collapseOverlappingBoxes(boxes) : undefined,
+          boxes: boxes.length > 0 ? boxes : undefined, // Return all boxes without collapsing
         };
       }
     }
@@ -1057,12 +1059,13 @@ function locateNumberFromWords(words: OcrWord[], options: LocateOptions): { numb
 
       if (isMatch) {
         // Store the first matched value as the canonical one (the actual ID number)
-        const canonicalValue = matchedValue ?? candidate;
-        matchedValue = canonicalValue;
+        if (!matchedValue) {
+          matchedValue = candidate;
+        }
         
         // Collect ALL occurrences that match the canonical value
         // This ensures we mask the same ID number everywhere it appears
-        if (canonicalValue === candidate) {
+        if (matchedValue === candidate) {
           matchedSegments.push(mergeBoxes(segmentBoxes));
         }
         // Break from inner loop to move to next starting position
@@ -1155,8 +1158,9 @@ function collectSequentialBoxes(words: OcrWord[], value: string, options: { digi
     }
   }
 
-  // Remove duplicate/overlapping boxes to avoid masking the same area multiple times
-  return collapseOverlappingBoxes(occurrences);
+  // Return all occurrences - don't collapse them here as they might be separate instances
+  // The masking functions will handle avoiding duplicate masking
+  return occurrences;
 }
 
 function mergeBoxes(boxes: MaskBox[]): MaskBox {
@@ -1251,8 +1255,15 @@ function maskAadhaarFragments(
 ) {
   if (!words.length) return;
   const digitsTarget = options.originalDigits?.replace(/\D/g, "") ?? "";
-  const hasTargetDigits = digitsTarget.length >= 4;
-  const excluded = options.excludeBoxes ?? [];
+  if (!digitsTarget || digitsTarget.length !== 12) return; // Only process if we have a valid 12-digit Aadhaar number
+  
+  // Get all boxes that were already masked by maskNumberRegions (these are expanded)
+  const excludedOriginalBoxes = options.excludeBoxes ?? [];
+  // Expand excluded boxes to match what was actually masked, so we can properly check overlaps
+  const excludedExpandedBoxes = excludedOriginalBoxes.map(box => 
+    adjustMaskArea(box, canvas.width, canvas.height)
+  );
+  
   const seen = new Set<string>();
 
   const style: NumberMaskStyle = {
@@ -1263,19 +1274,35 @@ function maskAadhaarFragments(
     highlightBackground: "rgba(251, 191, 36, 0.18)",
   };
 
-  const maskedValue =
-    digitsTarget.length === 12 ? maskAadhaar(digitsTarget) : digitsTarget ? maskAadhaar(digitsTarget) : "XXXX XXXX XXXX";
+  const maskedValue = maskAadhaar(digitsTarget);
 
   const keyForBox = (box: MaskBox) =>
     `${Math.round(box.x)}-${Math.round(box.y)}-${Math.round(box.width)}-${Math.round(box.height)}`;
 
-  const overlapsExcluded = (box: MaskBox) => excluded.some((ex) => boxesOverlap(ex, box));
+  // Check if a box overlaps with any already-masked (expanded) boxes
+  const overlapsExcluded = (box: MaskBox) => {
+    return excludedExpandedBoxes.some((ex) => boxesOverlap(ex, box));
+  };
 
-  const applyHighlight = (box: MaskBox) => {
+  // Function to mask a box if it hasn't been masked already
+  const applyMask = (box: MaskBox) => {
     const expanded = adjustMaskArea(box, canvas.width, canvas.height);
-    if (overlapsExcluded(expanded)) {
+    
+    // Check if this expanded box overlaps with any already-masked expanded boxes
+    // Use a more lenient check: only skip if there's significant overlap (not just touching)
+    const hasSignificantOverlap = excludedExpandedBoxes.some((ex) => {
+      const overlapX = Math.max(0, Math.min(expanded.x + expanded.width, ex.x + ex.width) - Math.max(expanded.x, ex.x));
+      const overlapY = Math.max(0, Math.min(expanded.y + expanded.height, ex.y + ex.height) - Math.max(expanded.y, ex.y));
+      const overlapArea = overlapX * overlapY;
+      const expandedArea = expanded.width * expanded.height;
+      // Skip only if more than 50% of this box is already covered
+      return overlapArea > expandedArea * 0.5;
+    });
+    
+    if (hasSignificantOverlap) {
       return;
     }
+    
     const key = keyForBox(expanded);
     if (seen.has(key)) {
       return;
@@ -1284,24 +1311,35 @@ function maskAadhaarFragments(
     drawNumberMask(ctx, expanded, { number: digitsTarget, masked: maskedValue }, style);
   };
 
-  if (digitsTarget.length === 12) {
-    const sequenceBoxes = collectSequentialBoxes(words, digitsTarget, { digitsOnly: true });
-    sequenceBoxes.forEach(applyHighlight);
-  }
+  // Find ALL occurrences of the Aadhaar number using collectSequentialBoxes
+  // This should find all instances, including ones that might have been missed
+  const allSequenceBoxes = collectSequentialBoxes(words, digitsTarget, { digitsOnly: true });
+  
+  // Mask each occurrence that wasn't already masked
+  allSequenceBoxes.forEach(applyMask);
 
+  // Also check individual words for fragments that might contain parts of the ID
+  // This is a fallback for cases where OCR didn't properly segment the number
   words.forEach((word) => {
     const raw = word.text ? String(word.text) : "";
     if (!raw.trim()) return;
     const digitsOnly = raw.replace(/\D/g, "");
-    if (digitsOnly.length < 4) return;
-
-    let shouldMask = false;
-    if (hasTargetDigits) {
-      shouldMask = digitsOnly !== "" && digitsTarget.includes(digitsOnly);
-    } else {
-      shouldMask = digitsOnly.length >= 6;
+    
+    // Check if this word contains a significant portion of the target digits
+    // We want to mask words that contain 6+ consecutive digits from the target
+    if (digitsOnly.length < 6) return;
+    
+    // Check if this word's digits are part of the target Aadhaar number
+    // by checking if a substring of the target matches this word's digits
+    let isPartOfTarget = false;
+    for (let i = 0; i <= digitsTarget.length - digitsOnly.length; i++) {
+      if (digitsTarget.slice(i, i + digitsOnly.length) === digitsOnly) {
+        isPartOfTarget = true;
+        break;
+      }
     }
-    if (!shouldMask) return;
+    
+    if (!isPartOfTarget) return;
 
     const base: MaskBox = {
       x: Math.max(0, word.bbox.x0),
@@ -1310,21 +1348,14 @@ function maskAadhaarFragments(
       height: Math.max(1, word.bbox.y1 - word.bbox.y0),
     };
 
-    if (excluded.some((box) => boxesOverlap(box, base))) {
+    // Check if this word box overlaps with any already-masked boxes (using original boxes for word-level check)
+    const overlapsOriginal = excludedOriginalBoxes.some((box) => boxesOverlap(box, base));
+    if (overlapsOriginal) {
       return;
     }
 
-    if (digitsTarget.length === 12) {
-      applyHighlight(base);
-    } else {
-      const expanded = expandBox(base, canvas.width, canvas.height);
-      const key = keyForBox(expanded);
-      if (seen.has(key)) {
-        return;
-      }
-      seen.add(key);
-      paintRedaction(ctx, expanded);
-    }
+    // Mask this word fragment
+    applyMask(base);
   });
 }
 
