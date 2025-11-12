@@ -835,21 +835,41 @@ function extractIdNumber(
   if (!text) return null;
   const cleaned = text.replace(/\s+/g, " ");
   if (idType === "Aadhaar") {
+    // First, try to locate the ID number value using locateNumberFromWords
+    // This finds the actual ID number value from OCR words
     const info = locateNumberFromWords(words, {
       minLength: 12,
       maxLength: 12,
       maskFormatter: maskAadhaar,
       digitsOnly: true,
     });
-    if (info) {
+    
+    if (info && info.number) {
+      // Now use collectSequentialBoxes to find ALL occurrences of this ID number
+      // This ensures we mask the number everywhere it appears in the document
+      const allBoxes = collectSequentialBoxes(words, info.number, { digitsOnly: true });
+      if (allBoxes.length > 0) {
+        return {
+          number: info.number,
+          masked: info.masked,
+          boxes: collapseOverlappingBoxes(allBoxes),
+        };
+      }
+      // Fallback: use boxes from locateNumberFromWords if collectSequentialBoxes found nothing
       return info;
     }
+    
+    // Fallback: try regex pattern matching
     const match = cleaned.match(/\b\d{4}\s?\d{4}\s?\d{4}\b/);
     if (match) {
       const digits = match[0].replace(/[\s-]/g, "");
       if (digits.length === 12) {
         const boxes = collectSequentialBoxes(words, digits, { digitsOnly: true });
-        return { number: digits, masked: maskAadhaar(digits), boxes: boxes.length ? boxes : undefined };
+        return {
+          number: digits,
+          masked: maskAadhaar(digits),
+          boxes: boxes.length > 0 ? collapseOverlappingBoxes(boxes) : undefined,
+        };
       }
     }
   }
@@ -858,14 +878,29 @@ function extractIdNumber(
       regex: /^[A-Z][0-9]{7}$/,
       maskFormatter: (value) => `${value[0]}XXXXXXX`,
     });
-    if (info) {
+    
+    if (info && info.number) {
+      // Find ALL occurrences of this passport number
+      const allBoxes = collectSequentialBoxes(words, info.number);
+      if (allBoxes.length > 0) {
+        return {
+          number: info.number,
+          masked: info.masked,
+          boxes: collapseOverlappingBoxes(allBoxes),
+        };
+      }
       return info;
     }
+    
     const match = cleaned.match(/\b[A-Z][0-9]{7}\b/);
     if (match) {
       const value = match[0];
       const boxes = collectSequentialBoxes(words, value);
-      return { number: value, masked: `${value[0]}XXXXXXX`, boxes: boxes.length ? boxes : undefined };
+      return {
+        number: value,
+        masked: `${value[0]}XXXXXXX`,
+        boxes: boxes.length > 0 ? collapseOverlappingBoxes(boxes) : undefined,
+      };
     }
   }
   if (idType === "Emirates ID") {
@@ -877,15 +912,31 @@ function extractIdNumber(
         return `784-XXXX-XXXXXXX-${last}`;
       },
     });
-    if (info) {
+    
+    if (info && info.number) {
+      // Extract digits for matching
+      const digits = info.number.replace(/\D/g, "");
+      const allBoxes = collectSequentialBoxes(words, digits, { digitsOnly: true });
+      if (allBoxes.length > 0) {
+        return {
+          number: info.number,
+          masked: info.masked,
+          boxes: collapseOverlappingBoxes(allBoxes),
+        };
+      }
       return info;
     }
+    
     const match = cleaned.match(/\b784-\d{4}-\d{7}-\d\b/);
     if (match) {
       const parts = match[0].split("-");
       const digits = match[0].replace(/\D/g, "");
       const boxes = collectSequentialBoxes(words, digits, { digitsOnly: true });
-      return { number: match[0], masked: `784-XXXX-XXXXXXX-${parts[3]}`, boxes: boxes.length ? boxes : undefined };
+      return {
+        number: match[0],
+        masked: `784-XXXX-XXXXXXX-${parts[3]}`,
+        boxes: boxes.length > 0 ? collapseOverlappingBoxes(boxes) : undefined,
+      };
     }
   }
   return null;
@@ -990,30 +1041,38 @@ function locateNumberFromWords(words: OcrWord[], options: LocateOptions): { numb
         height: Math.max(1, current.bbox.y1 - current.bbox.y0),
       });
 
+      let isMatch = false;
       if (options.regex) {
         if (options.regex.test(candidate)) {
-          matchedValue = matchedValue ?? candidate;
-          if (matchedValue === candidate) {
-            matchedSegments.push(mergeBoxes(segmentBoxes));
-          }
-          break;
+          isMatch = true;
         }
       } else {
         if (options.maxLength && length > options.maxLength) {
           break;
         }
         if ((options.minLength === undefined || length >= options.minLength) && (options.maxLength === undefined || length === options.maxLength)) {
-          matchedValue = matchedValue ?? candidate;
-          if (matchedValue === candidate) {
-            matchedSegments.push(mergeBoxes(segmentBoxes));
-          }
-          break;
+          isMatch = true;
         }
+      }
+
+      if (isMatch) {
+        // Store the first matched value as the canonical one (the actual ID number)
+        const canonicalValue = matchedValue ?? candidate;
+        matchedValue = canonicalValue;
+        
+        // Collect ALL occurrences that match the canonical value
+        // This ensures we mask the same ID number everywhere it appears
+        if (canonicalValue === candidate) {
+          matchedSegments.push(mergeBoxes(segmentBoxes));
+        }
+        // Break from inner loop to move to next starting position
+        // The outer loop will continue and find the next occurrence
+        break;
       }
     }
   }
 
-  if (!matchedValue) return null;
+  if (!matchedValue || matchedSegments.length === 0) return null;
 
   const uniqueBoxes = collapseOverlappingBoxes(matchedSegments);
   return {
@@ -1029,45 +1088,75 @@ function collectSequentialBoxes(words: OcrWord[], value: string, options: { digi
   if (!normalizedTarget) return [];
 
   const occurrences: MaskBox[] = [];
+  const targetLength = normalizedTarget.length;
 
+  // Check all possible starting positions to find ALL occurrences
+  // This handles both single-word matches (entire ID in one word) and multi-word matches (ID split across words)
   for (let start = 0; start < words.length; start += 1) {
     let consumed = 0;
     const segment: MaskBox[] = [];
 
+    // Try to match the target starting from this position
     for (let index = start; index < words.length; index += 1) {
       const rawText = words[index].text ?? "";
       const normalizedWord = options.digitsOnly ? rawText.replace(/\D/g, "") : rawText.replace(/\s+/g, "").toUpperCase();
 
       if (!normalizedWord) {
+        // Empty word - if we've consumed part of the target, this breaks the sequence
         if (consumed > 0) {
           break;
         }
+        // Otherwise, skip empty words and continue
         continue;
       }
 
-      const expected = normalizedTarget.slice(consumed, consumed + normalizedWord.length);
-      if (normalizedWord !== expected) {
+      // Check if this word matches the next part of the target
+      const remainingTarget = normalizedTarget.slice(consumed);
+      if (remainingTarget.length === 0) {
+        // We've already matched the full target, but continue to check if there are more matches
         break;
       }
 
-      segment.push({
-        x: Math.max(0, words[index].bbox.x0),
-        y: Math.max(0, words[index].bbox.y0),
-        width: Math.max(1, words[index].bbox.x1 - words[index].bbox.x0),
-        height: Math.max(1, words[index].bbox.y1 - words[index].bbox.y0),
-      });
-      consumed += normalizedWord.length;
+      // Check if the word exactly matches the next part of the target
+      if (normalizedWord === remainingTarget.slice(0, normalizedWord.length)) {
+        // This word matches the next part - add it to the segment
+        segment.push({
+          x: Math.max(0, words[index].bbox.x0),
+          y: Math.max(0, words[index].bbox.y0),
+          width: Math.max(1, words[index].bbox.x1 - words[index].bbox.x0),
+          height: Math.max(1, words[index].bbox.y1 - words[index].bbox.y0),
+        });
+        consumed += normalizedWord.length;
 
-      if (consumed >= normalizedTarget.length) {
-        if (segment.length > 0) {
-          occurrences.push(mergeBoxes(segment));
+        // Check if we've matched the complete target
+        if (consumed >= targetLength) {
+          if (segment.length > 0) {
+            occurrences.push(mergeBoxes(segment));
+          }
+          // Break from inner loop to try next starting position
+          break;
         }
+      } else if (normalizedWord.length >= targetLength && normalizedWord.includes(normalizedTarget)) {
+        // Special case: entire target is embedded within this single word
+        // This handles cases where OCR puts the whole ID in one word
+        occurrences.push({
+          x: Math.max(0, words[index].bbox.x0),
+          y: Math.max(0, words[index].bbox.y0),
+          width: Math.max(1, words[index].bbox.x1 - words[index].bbox.x0),
+          height: Math.max(1, words[index].bbox.y1 - words[index].bbox.y0),
+        });
+        // Break since we found a complete match in this word
+        break;
+      } else {
+        // Mismatch - this sequence doesn't match the target
+        // Break and try next starting position
         break;
       }
     }
   }
 
-  return occurrences;
+  // Remove duplicate/overlapping boxes to avoid masking the same area multiple times
+  return collapseOverlappingBoxes(occurrences);
 }
 
 function mergeBoxes(boxes: MaskBox[]): MaskBox {
