@@ -44,8 +44,8 @@ function Content() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  const displayMaskedSummary =
-    maskedSummary ? maskID(idType, maskedSummary) : maskedSummary;
+  // maskedSummary is already masked - display directly
+  const displayMaskedSummary = maskedSummary;
 
   useEffect(() => {
     if (!isPrefilled) return;
@@ -189,9 +189,8 @@ function Content() {
       const masked = await createMaskedPreview(selected, idType, validation.extractedText, validation.words);
       setFile(selected);
       setMaskedPreview(masked.dataUrl);
-      const rawSummary = masked.summary ?? "";
-      // Apply generic masking at upload handler level - raw IDs never stored
-      const safeSummary = rawSummary ? maskID(idType, rawSummary) : rawSummary;
+      // masked.summary is already masked from deriveMaskedSummary() - store directly
+      const safeSummary = masked.summary ?? "";
       setMaskedSummary(safeSummary);
       sessionStorage.setItem("uploadedIdName", selected.name);
       sessionStorage.setItem("maskedIdPreview", masked.dataUrl);
@@ -248,8 +247,8 @@ function Content() {
     try {
       const raw = localStorage.getItem("demoEntries");
       const entries = raw ? JSON.parse(raw) : [];
-      // Ensure masking is applied before persistence - raw IDs never stored
-      const persistedMaskedSummary = maskedSummary ? maskID(idType, maskedSummary) : maskedSummary;
+      // maskedSummary is already masked - store directly
+      const persistedMaskedSummary = maskedSummary;
       entries.unshift({
         name: fullName,
         ref: bookingRef,
