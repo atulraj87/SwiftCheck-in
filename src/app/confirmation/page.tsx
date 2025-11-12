@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { QRCodeCanvas as QRCode } from "qrcode.react";
 import { hmacHex } from "@/lib/hmac";
-import { maskAadhaar } from "@/lib/idValidation";
+import { maskID } from "@/lib/idMasking";
 
 export default function ConfirmationPage() {
   return (
@@ -24,7 +24,7 @@ function Content() {
   const maskedSummary = typeof window !== "undefined" ? sessionStorage.getItem("maskedIdSummary") : null;
   const maskedIdType = typeof window !== "undefined" ? sessionStorage.getItem("maskedIdType") : null;
   const safeMaskedSummary =
-    maskedIdType === "Aadhaar" && maskedSummary ? maskAadhaar(maskedSummary) : maskedSummary;
+    maskedIdType && maskedSummary ? maskID(maskedIdType, maskedSummary) : maskedSummary;
   const [qrValue, setQrValue] = useState("{}");
   const wifiNetwork = ref && ref !== "—" ? `NOVATAL-${ref.slice(-4).padStart(4, "0")}` : null;
   const wifiPassword = ref && ref !== "—" ? `${ref.toUpperCase()}2024` : null;

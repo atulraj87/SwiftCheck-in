@@ -317,8 +317,8 @@ function ValidateContent() {
                         <div>
                           <span className="text-zinc-600 text-sm">Masked ID Number:</span>
                           <p className="font-medium mt-1">
-                            {result.match.idType === "Aadhaar" && result.match.maskedSummary
-                              ? maskAadhaar(result.match.maskedSummary)
+                            {result.match.idType && result.match.maskedSummary
+                              ? maskID(result.match.idType, result.match.maskedSummary)
                               : result.match.maskedSummary}
                           </p>
                         </div>

@@ -178,7 +178,7 @@ export default function HotelDashboardPage() {
                     <td className="px-3 py-2">
                       {e.maskedSummary && e.idType ? (
                         <span className="text-sm text-zinc-700">
-                          {e.idType}: {e.idType === "Aadhaar" ? maskAadhaar(e.maskedSummary) : e.maskedSummary}
+                          {e.idType}: {maskID(e.idType, e.maskedSummary)}
                         </span>
                       ) : e.uploadedIdName ? (
                         <span className="text-sm text-zinc-600">{e.uploadedIdName}</span>

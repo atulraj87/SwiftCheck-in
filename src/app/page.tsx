@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { maskAadhaar, validateIdContent, type OcrWord } from "@/lib/idValidation";
+import { validateIdContent, type OcrWord } from "@/lib/idValidation";
 import { maskID } from "@/lib/idMasking";
 
 type MaskedPreviewResult = {

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { maskAadhaar } from "@/lib/idValidation";
+import { maskID } from "@/lib/idMasking";
 
 type Entry = {
   name: string;
@@ -21,8 +21,8 @@ type Entry = {
 };
 
 function sanitizeEntry(entry: Entry): Entry {
-  if (entry.idType === "Aadhaar" && entry.maskedSummary) {
-    const masked = maskAadhaar(entry.maskedSummary);
+  if (entry.idType && entry.maskedSummary) {
+    const masked = maskID(entry.idType, entry.maskedSummary);
     if (masked !== entry.maskedSummary) {
       return { ...entry, maskedSummary: masked };
     }
@@ -218,7 +218,7 @@ function Content() {
                 <p className="font-medium mt-1">{entry.idType}</p>
                 <p className="text-zinc-600 mt-3">Masked ID Number:</p>
                 <p className="font-medium mt-1">
-                  {entry.idType === "Aadhaar" ? maskAadhaar(entry.maskedSummary) : entry.maskedSummary}
+                  {entry.idType && entry.maskedSummary ? maskID(entry.idType, entry.maskedSummary) : entry.maskedSummary}
                 </p>
               </div>
               {entry.maskedPreview && (
