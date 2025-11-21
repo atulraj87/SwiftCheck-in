@@ -1,13 +1,27 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, createRef } from "react";
 import { validateIdContent, type OcrWord } from "@/lib/idValidation";
 import { maskID } from "@/lib/idMasking";
 
 type MaskedPreviewResult = {
   dataUrl: string;
   summary?: string;
+};
+
+type GuestIdData = {
+  id: string;
+  name: string;
+  idType: string;
+  file: File | null;
+  maskedPreview: string;
+  maskedSummary: string;
+  fileError: string;
+  fileWarning: string;
+  isProcessing: boolean;
+  showCamera: boolean;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
 };
 
 export default function Home() {
@@ -27,25 +41,17 @@ function Content() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [country, setCountry] = useState("");
-  const [idType, setIdType] = useState("");
+  const [numGuests, setNumGuests] = useState(1);
+  const [guests, setGuests] = useState<GuestIdData[]>([]);
   const [agree, setAgree] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
-  const [fileError, setFileError] = useState<string>("");
-  const [fileWarning, setFileWarning] = useState<string>("");
-  const [maskedPreview, setMaskedPreview] = useState<string>("");
-  const [maskedSummary, setMaskedSummary] = useState<string>("");
-  const [showCamera, setShowCamera] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const isPrefilled = params.get("prefill") === "1";
   const [emailError, setEmailError] = useState<string>("");
   const [phoneError, setPhoneError] = useState<string>("");
+  const isPrefilled = params.get("prefill") === "1";
   const lockedInputClass = isPrefilled ? "bg-zinc-100 cursor-not-allowed text-zinc-700" : "";
 
   const today = new Date().toISOString().split("T")[0];
 
-  // Masking feature removed - no summary to display
-
+  // Initialize from URL params
   useEffect(() => {
     if (!isPrefilled) return;
     setFullName(params.get("name") ?? "");
@@ -54,7 +60,32 @@ function Content() {
     setEmail(params.get("email") ?? "");
     setPhone(params.get("phone") ?? "");
     setCountry(params.get("country") ?? "");
+    const guestsParam = params.get("guests") ?? "1";
+    const num = parseInt(guestsParam, 10) || 1;
+    setNumGuests(num);
   }, [isPrefilled, params]);
+
+  // Initialize guests array when numGuests changes
+  useEffect(() => {
+    const guestNames = params.get("guestNames")?.split(",") || [];
+    const newGuests: GuestIdData[] = [];
+    for (let i = 0; i < numGuests; i++) {
+      newGuests.push({
+        id: `guest-${i}`,
+        name: guestNames[i] || (i === 0 ? fullName : `Guest ${i + 1}`),
+        idType: "",
+        file: null,
+        maskedPreview: "",
+        maskedSummary: "",
+        fileError: "",
+        fileWarning: "",
+        isProcessing: false,
+        showCamera: false,
+        fileInputRef: createRef<HTMLInputElement | null>(),
+      });
+    }
+    setGuests(newGuests);
+  }, [numGuests, fullName, params]);
 
   const countryToIdTypes: Record<string, string[]> = {
     India: ["Aadhaar", "Passport", "Driving Licence"],
@@ -64,24 +95,6 @@ function Content() {
   };
   const idOptions = country ? countryToIdTypes[country] ?? ["Passport"] : [];
 
-  function resetIdArtifacts(options: { preserveMessages?: boolean } = {}) {
-    const { preserveMessages = false } = options;
-    setFile(null);
-    setMaskedPreview("");
-    setMaskedSummary("");
-    if (!preserveMessages) {
-      setFileError("");
-      setFileWarning("");
-    }
-    setShowCamera(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-    sessionStorage.removeItem("uploadedIdName");
-    sessionStorage.removeItem("maskedIdPreview");
-    sessionStorage.removeItem("maskedIdSummary");
-    sessionStorage.removeItem("maskedIdType");
-  }
 
   function validateEmailFormat(value: string): boolean {
     const trimmed = value.trim();
@@ -149,58 +162,60 @@ function Content() {
     }
   }
 
-  async function processSelectedFile(selected: File | null) {
+  async function processGuestFile(guestIndex: number, selected: File | null) {
     if (!selected) return;
-    if (!idType) {
-      setFileError("Select an ID type before uploading.");
+    const guest = guests[guestIndex];
+    if (!guest.idType) {
+      const updated = [...guests];
+      updated[guestIndex].fileError = "Select an ID type before uploading.";
+      setGuests(updated);
       return;
     }
     const allowed = ["image/jpeg", "image/png", "application/pdf"];
     if (!allowed.includes(selected.type)) {
-      setFileError("Only JPG, PNG or PDF files are allowed.");
-      setFileWarning("");
-      resetIdArtifacts({ preserveMessages: true });
+      const updated = [...guests];
+      updated[guestIndex].fileError = "Only JPG, PNG or PDF files are allowed.";
+      updated[guestIndex].fileWarning = "";
+      setGuests(updated);
       return;
     }
-    setFileError("");
-    setFileWarning("");
-    setIsProcessing(true);
+    const updated = [...guests];
+    updated[guestIndex].fileError = "";
+    updated[guestIndex].fileWarning = "";
+    updated[guestIndex].isProcessing = true;
+    setGuests(updated);
     try {
-      const validation = await validateIdContent(selected, idType);
+      const validation = await validateIdContent(selected, guest.idType);
       if (!validation.ok) {
-        const message = validation.message || `The uploaded file does not match ${idType}. Please upload the correct document.`;
-        setFileError(message);
-        setFileWarning("");
-        setFile(null);
-        setMaskedPreview("");
-        setMaskedSummary("");
-        sessionStorage.removeItem("uploadedIdName");
-        sessionStorage.removeItem("maskedIdPreview");
-        sessionStorage.removeItem("maskedIdSummary");
-        sessionStorage.removeItem("maskedIdType");
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
+        const message = validation.message || `The uploaded file does not match ${guest.idType}. Please upload the correct document.`;
+        const updated = [...guests];
+        updated[guestIndex].fileError = message;
+        updated[guestIndex].fileWarning = "";
+        updated[guestIndex].file = null;
+        updated[guestIndex].maskedPreview = "";
+        updated[guestIndex].maskedSummary = "";
+        updated[guestIndex].isProcessing = false;
+        setGuests(updated);
+        if (updated[guestIndex].fileInputRef.current) {
+          updated[guestIndex].fileInputRef.current.value = "";
         }
-        setShowCamera(false);
         return;
       }
-      setFileWarning(validation.message ?? "");
-      const masked = await createMaskedPreview(selected, idType, validation.extractedText, validation.words);
-      setFile(selected);
-      setMaskedPreview(masked.dataUrl);
-      // No masking summary - feature removed
-      setMaskedSummary("");
-      sessionStorage.setItem("uploadedIdName", selected.name);
-      sessionStorage.setItem("maskedIdPreview", masked.dataUrl);
-      sessionStorage.setItem("maskedIdSummary", "");
-      sessionStorage.setItem("maskedIdType", idType);
-      setShowCamera(false);
+      const updated2 = [...guests];
+      updated2[guestIndex].fileWarning = validation.message ?? "";
+      const masked = await createMaskedPreview(selected, guest.idType, validation.extractedText, validation.words);
+      updated2[guestIndex].file = selected;
+      updated2[guestIndex].maskedPreview = masked.dataUrl;
+      updated2[guestIndex].maskedSummary = "";
+      updated2[guestIndex].isProcessing = false;
+      updated2[guestIndex].showCamera = false;
+      setGuests(updated2);
     } catch (error) {
       console.error(error);
-      setFileError("Could not process the document. Please try a clearer scan or PDF.");
-      resetIdArtifacts({ preserveMessages: true });
-    } finally {
-      setIsProcessing(false);
+      const updated = [...guests];
+      updated[guestIndex].fileError = "Could not process the document. Please try a clearer scan or PDF.";
+      updated[guestIndex].isProcessing = false;
+      setGuests(updated);
     }
   }
 
@@ -229,8 +244,11 @@ function Content() {
       alert("Please accept the policies to continue.");
       return;
     }
-    if (!file || !maskedPreview) {
-      setFileError("Upload and validate an ID before continuing.");
+    
+    // Validate all guests have uploaded IDs
+    const allGuestsHaveIds = guests.every((guest) => guest.file && guest.maskedPreview);
+    if (!allGuestsHaveIds) {
+      alert("Please upload and validate ID documents for all guests before continuing.");
       return;
     }
 
@@ -240,26 +258,25 @@ function Content() {
       arrival,
     });
 
-    sessionStorage.setItem("uploadedIdName", file.name);
-
     try {
       const raw = localStorage.getItem("demoEntries");
       const entries = raw ? JSON.parse(raw) : [];
-      // Masking feature removed - no summary to store
-      entries.unshift({
-        name: fullName,
+      // Create entry for each guest
+      const guestEntries = guests.map((guest) => ({
+        name: guest.name,
         ref: bookingRef,
         arrival,
         email: trimmedEmail,
         phone,
         country,
-        idType,
-        maskedPreview,
+        idType: guest.idType,
+        maskedPreview: guest.maskedPreview,
         maskedSummary: "",
-        uploadedIdName: file.name,
+        uploadedIdName: guest.file?.name || "",
         status: "Booked",
         createdAt: new Date().toISOString(),
-      });
+      }));
+      entries.unshift(...guestEntries);
       localStorage.setItem("demoEntries", JSON.stringify(entries));
       localStorage.setItem("demoSendStatus", JSON.stringify({ sentEmail: true, sentWhatsApp: true }));
     } catch {
@@ -267,6 +284,33 @@ function Content() {
     }
 
     router.push(`/confirmation?${searchParams.toString()}`);
+  }
+
+  function updateGuestName(guestIndex: number, name: string) {
+    const updated = [...guests];
+    updated[guestIndex].name = name;
+    setGuests(updated);
+  }
+
+  function updateGuestIdType(guestIndex: number, idType: string) {
+    const updated = [...guests];
+    updated[guestIndex].idType = idType;
+    updated[guestIndex].file = null;
+    updated[guestIndex].maskedPreview = "";
+    updated[guestIndex].fileError = "";
+    updated[guestIndex].fileWarning = "";
+    setGuests(updated);
+  }
+
+  function toggleGuestCamera(guestIndex: number) {
+    const updated = [...guests];
+    if (!updated[guestIndex].idType) {
+      updated[guestIndex].fileError = "Select an ID type before using the camera.";
+      setGuests(updated);
+      return;
+    }
+    updated[guestIndex].showCamera = !updated[guestIndex].showCamera;
+    setGuests(updated);
   }
 
   return (
@@ -278,7 +322,7 @@ function Content() {
           <li className={`rounded-full px-2 py-1 ${fullName && email && phone && bookingRef && arrival && country ? "bg-zinc-900 text-white" : "bg-zinc-400/60"}`}>1 • Details</li>
           <li className={`rounded-full px-2 py-1 ${agree ? "bg-zinc-900 text-white" : "bg-zinc-400/60"}`}>2 • Policies</li>
           <li className="rounded-full bg-zinc-900 px-2 py-1 text-white">3 • Package</li>
-          <li className={`rounded-full px-2 py-1 ${maskedPreview ? "bg-zinc-900 text-white" : "bg-zinc-400/60"}`}>4 • ID</li>
+          <li className={`rounded-full px-2 py-1 ${guests.length > 0 && guests.every(g => g.maskedPreview) ? "bg-zinc-900 text-white" : "bg-zinc-400/60"}`}>4 • ID{numGuests > 1 ? `s (${guests.filter(g => g.maskedPreview).length}/${numGuests})` : ""}</li>
         </ol>
       </header>
 
@@ -288,7 +332,7 @@ function Content() {
             <h2 className="text-lg font-medium">Booking details</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium">Full name</label>
+                <label className="block text-sm font-medium">Primary guest name</label>
                 <input
                   type="text"
                   required
@@ -299,6 +343,24 @@ function Content() {
                   aria-readonly={isPrefilled}
                   className={`mt-1 w-full rounded-md border px-3 py-2 outline-none focus:ring-2 border-zinc-300 focus:ring-zinc-900 ${lockedInputClass}`}
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Number of guests</label>
+                <select
+                  value={numGuests}
+                  onChange={(e) => {
+                    const num = parseInt(e.target.value, 10);
+                    setNumGuests(num);
+                  }}
+                  disabled={isPrefilled}
+                  className={`mt-1 w-full rounded-md border px-3 py-2 outline-none focus:ring-2 border-zinc-300 focus:ring-zinc-900 ${isPrefilled ? "bg-zinc-100 cursor-not-allowed text-zinc-700" : ""}`}
+                >
+                  {[1, 2, 3, 4, 5, 6].map((num) => (
+                    <option key={num} value={num}>
+                      {num} {num === 1 ? "guest" : "guests"}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium">Email</label>
@@ -382,8 +444,16 @@ function Content() {
                   onChange={(e) => {
                     const value = e.target.value;
                     setCountry(value);
-                    setIdType("");
-                    resetIdArtifacts();
+                    // Reset all guest ID types when country changes
+                    const updated = guests.map(g => ({
+                      ...g,
+                      idType: "",
+                      file: null,
+                      maskedPreview: "",
+                      fileError: "",
+                      fileWarning: "",
+                    }));
+                    setGuests(updated);
                     if (phone) {
                       const validation = validatePhoneNumber(phone, value);
                       setPhoneError(validation.ok ? "" : validation.message || "Enter a valid phone number.");
@@ -447,88 +517,29 @@ function Content() {
           </section>
 
           <section className="mt-8">
-            <h2 className="text-lg font-medium">Upload ID</h2>
-            <p className="mt-1 text-sm text-zinc-600">Select an acceptable ID type and upload or capture it. Only the masked copy is stored.</p>
-            <div className="mt-3 grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium">ID type</label>
-                <select
-                  required
-                  value={idType}
-                  onChange={(e) => {
-                    setIdType(e.target.value);
-                    resetIdArtifacts();
-                  }}
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-900"
-                >
-                  <option value="" disabled>
-                    Select ID
-                  </option>
-                  {idOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="block text-sm font-medium">Upload or capture</label>
-                <div className="flex flex-wrap items-center gap-3">
-                  <label className="inline-flex cursor-pointer items-center rounded-md bg-white px-4 py-2 text-sm font-medium text-zinc-900 shadow-sm ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50">
-                    Choose file
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*,application/pdf"
-                      className="sr-only"
-                      onChange={(e) => processSelectedFile(e.target.files?.[0] ?? null)}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-800 hover:bg-zinc-100"
-                    onClick={() => {
-                      if (!idType) {
-                        setFileError("Select an ID type before using the camera.");
-                        return;
-                      }
-                      setShowCamera((prev) => !prev);
-                    }}
-                  >
-                    {showCamera ? "Hide Camera" : "Use Camera"}
-                  </button>
-                  <span className="text-sm text-zinc-700">{file ? file.name : "No file chosen"}</span>
-                </div>
-                {isProcessing && (
-                  <p className="mt-2 text-xs text-zinc-600">Processing ID... Please wait.</p>
-                )}
-                {fileError && <p className="mt-2 text-xs text-red-600">{fileError}</p>}
-                {!fileError && fileWarning && <p className="mt-2 text-xs text-amber-600">{fileWarning}</p>}
-              </div>
+            <h2 className="text-lg font-medium">Upload ID Documents</h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              {numGuests === 1 
+                ? "Select an acceptable ID type and upload or capture it. Only the masked copy is stored."
+                : `Upload ID documents for all ${numGuests} guests. Each guest must provide their own ID.`}
+            </p>
+
+            <div className="mt-4 space-y-6">
+              {guests.map((guest, guestIndex) => (
+                <GuestIdUpload
+                  key={guest.id}
+                  guest={guest}
+                  guestIndex={guestIndex}
+                  country={country}
+                  idOptions={idOptions}
+                  onNameChange={(name) => updateGuestName(guestIndex, name)}
+                  onIdTypeChange={(idType) => updateGuestIdType(guestIndex, idType)}
+                  onFileSelect={(file) => processGuestFile(guestIndex, file)}
+                  onCameraToggle={() => toggleGuestCamera(guestIndex)}
+                  isPrefilled={isPrefilled}
+                />
+              ))}
             </div>
-
-            {showCamera && !isProcessing && (
-              <CameraCapture
-                onCapture={async (captured) => {
-                  await processSelectedFile(captured);
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = "";
-                  }
-                }}
-                onClose={() => setShowCamera(false)}
-              />
-            )}
-
-            {maskedPreview && (
-              <div className="mt-4 space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
-                <div className="overflow-hidden rounded border border-zinc-100 bg-zinc-50">
-                  <img src={maskedPreview} alt="Masked ID preview" className="w-full object-contain" />
-                </div>
-                <p className="text-xs text-zinc-600">
-                  ID document uploaded successfully.
-                </p>
-              </div>
-            )}
           </section>
 
           <div className="mt-8 flex items-center justify-end gap-3">
@@ -536,21 +547,20 @@ function Content() {
               type="submit"
               className="inline-flex items-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
               disabled={
-                isProcessing ||
+                guests.some(g => g.isProcessing) ||
                 !fullName ||
                 !email ||
                 !phone ||
                 !bookingRef ||
                 !arrival ||
                 !country ||
-                !idType ||
-                !maskedPreview ||
+                guests.some(g => !g.idType || !g.maskedPreview) ||
                 !agree ||
                 !!emailError ||
                 !!phoneError
               }
             >
-              {isProcessing ? "Processing..." : "Submit & Get Confirmation"}
+              {guests.some(g => g.isProcessing) ? "Processing..." : "Submit & Get Confirmation"}
             </button>
         </div>
         </form>
@@ -559,6 +569,131 @@ function Content() {
           Original IDs never leave your browser. A masked copy is securely shared with the hotel.
         </p>
       </main>
+    </div>
+  );
+}
+
+// Guest ID Upload Component
+type GuestIdUploadProps = {
+  guest: GuestIdData;
+  guestIndex: number;
+  country: string;
+  idOptions: string[];
+  onNameChange: (name: string) => void;
+  onIdTypeChange: (idType: string) => void;
+  onFileSelect: (file: File | null) => void;
+  onCameraToggle: () => void;
+  isPrefilled: boolean;
+};
+
+function GuestIdUpload({
+  guest,
+  guestIndex,
+  country,
+  idOptions,
+  onNameChange,
+  onIdTypeChange,
+  onFileSelect,
+  onCameraToggle,
+  isPrefilled,
+}: GuestIdUploadProps) {
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-zinc-900">
+          Guest {guestIndex + 1} {guestIndex === 0 && "(Primary)"}
+        </h3>
+        {guest.maskedPreview && (
+          <span className="text-xs text-green-600 font-medium">✓ ID Verified</span>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium">Guest Name</label>
+          <input
+            type="text"
+            value={guest.name}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder={guestIndex === 0 ? "Primary guest name" : `Guest ${guestIndex + 1} name`}
+            readOnly={isPrefilled && guestIndex === 0}
+            className={`mt-1 w-full rounded-md border px-3 py-2 outline-none focus:ring-2 border-zinc-300 focus:ring-zinc-900 ${isPrefilled && guestIndex === 0 ? "bg-zinc-100 cursor-not-allowed text-zinc-700" : ""}`}
+          />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="block text-sm font-medium">ID type</label>
+            <select
+              required
+              value={guest.idType}
+              onChange={(e) => onIdTypeChange(e.target.value)}
+              disabled={!country}
+              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 outline-none focus:ring-2 focus:ring-zinc-900 disabled:bg-zinc-100 disabled:cursor-not-allowed"
+            >
+              <option value="" disabled>
+                Select ID
+              </option>
+              {idOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="block text-sm font-medium">Upload or capture</label>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center rounded-md bg-white px-4 py-2 text-sm font-medium text-zinc-900 shadow-sm ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50">
+                Choose file
+                <input
+                  ref={guest.fileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="sr-only"
+                  onChange={(e) => onFileSelect(e.target.files?.[0] ?? null)}
+                />
+              </label>
+              <button
+                type="button"
+                className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-800 hover:bg-zinc-100"
+                onClick={onCameraToggle}
+              >
+                {guest.showCamera ? "Hide Camera" : "Use Camera"}
+              </button>
+              <span className="text-sm text-zinc-700">{guest.file ? guest.file.name : "No file chosen"}</span>
+            </div>
+            {guest.isProcessing && (
+              <p className="mt-2 text-xs text-zinc-600">Processing ID... Please wait.</p>
+            )}
+            {guest.fileError && <p className="mt-2 text-xs text-red-600">{guest.fileError}</p>}
+            {!guest.fileError && guest.fileWarning && <p className="mt-2 text-xs text-amber-600">{guest.fileWarning}</p>}
+          </div>
+        </div>
+
+        {guest.showCamera && !guest.isProcessing && (
+          <CameraCapture
+            onCapture={async (captured) => {
+              await onFileSelect(captured);
+              if (guest.fileInputRef.current) {
+                guest.fileInputRef.current.value = "";
+              }
+            }}
+            onClose={() => onCameraToggle()}
+          />
+        )}
+
+        {guest.maskedPreview && (
+          <div className="mt-4 space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+            <div className="overflow-hidden rounded border border-zinc-100 bg-white">
+              <img src={guest.maskedPreview} alt={`${guest.name} ID preview`} className="w-full object-contain" />
+            </div>
+            <p className="text-xs text-zinc-600">
+              ID document uploaded successfully for {guest.name}.
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1522,3 +1657,5 @@ function drawRoundedRectPath(
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
 }
+
+
