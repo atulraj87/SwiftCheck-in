@@ -110,3 +110,4 @@ If you get a 404 error:
 - Check that query parameters are properly URL encoded
 - Verify the route structure matches exactly (case-sensitive)
 
+

@@ -18,7 +18,7 @@ function Content() {
   const ref = params.get("ref") ?? "—";
   const arrival = params.get("arrival") ?? "—";
   const qrValue = JSON.stringify({ ref, name, arrival });
-  const wifiNetwork = ref !== "—" ? `NOVATAL-${ref.slice(-4).padStart(4, "0")}` : null;
+  const wifiNetwork = ref !== "—" ? `GRANDMARINA-${ref.slice(-4).padStart(4, "0")}` : null;
   const wifiPassword = ref !== "—" ? `${ref.toUpperCase()}2024` : null;
   const supportContacts = [
     { label: "🔑 Lost or locked out?", ext: "Ext. 101" },
@@ -33,7 +33,7 @@ function Content() {
     <div className="min-h-screen bg-[#D9DED7] text-zinc-900">
       <main className="mx-auto w-full max-w-2xl px-6 py-10">
         <div className="rounded-2xl border border-transparent bg-white p-6 shadow-sm">
-          <p className="text-xs font-medium tracking-wide text-zinc-500">From: Your Hotel</p>
+          <p className="text-xs font-medium tracking-wide text-zinc-500">From: Grand Marina Hotel</p>
           <h1 className="mt-1 text-xl font-semibold">Your pre-check-in is confirmed</h1>
           <p className="mt-1 text-sm text-zinc-600">Show this QR at reception to skip paperwork.</p>
 

@@ -27,12 +27,12 @@ function Content() {
     roomType: "Deluxe Sea View Room",
     guestName: "Jane Doe",
     email: "jane.doe@example.com",
-    phone: "+1 555 123 4567",
-    totalPrice: 450,
-    currency: "USD",
+    phone: "+65 6123 4567",
+    totalPrice: 600,
+    currency: "SGD",
     status: "Confirmed",
     bookingDate: "2024-02-20",
-    country: "USA",
+    country: "Singapore",
   };
 
   return (

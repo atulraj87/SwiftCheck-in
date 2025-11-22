@@ -26,7 +26,7 @@ function Content() {
   const safeMaskedSummary =
     maskedIdType && maskedSummary ? maskID(maskedIdType, maskedSummary) : maskedSummary;
   const [qrValue, setQrValue] = useState("{}");
-  const wifiNetwork = ref && ref !== "—" ? `NOVATAL-${ref.slice(-4).padStart(4, "0")}` : null;
+  const wifiNetwork = ref && ref !== "—" ? `GRANDMARINA-${ref.slice(-4).padStart(4, "0")}` : null;
   const wifiPassword = ref && ref !== "—" ? `${ref.toUpperCase()}2024` : null;
   useEffect(() => {
     async function build() {

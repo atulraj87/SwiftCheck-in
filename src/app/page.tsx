@@ -59,7 +59,7 @@ function Content() {
     setArrival(params.get("arrival") ?? "");
     setEmail(params.get("email") ?? "");
     setPhone(params.get("phone") ?? "");
-    setCountry(params.get("country") ?? "");
+    setCountry(params.get("country") ?? "Singapore");
     const guestsParam = params.get("guests") ?? "1";
     const num = parseInt(guestsParam, 10) || 1;
     setNumGuests(num);
@@ -88,6 +88,7 @@ function Content() {
   }, [numGuests, fullName, params]);
 
   const countryToIdTypes: Record<string, string[]> = {
+    Singapore: ["Passport", "NRIC", "Driving Licence"],
     India: ["Aadhaar", "Passport", "Driving Licence"],
     USA: ["Passport", "Driver License", "State ID"],
     UAE: ["Emirates ID", "Passport", "Driving Licence"],
@@ -152,6 +153,18 @@ function Content() {
           return { ok: true };
         }
         return invalid("Enter a valid UK phone number (10-11 digits).");
+      }
+      case "Singapore": {
+        if (normalized.startsWith("65") && normalized.length >= 10) {
+          normalized = normalized.slice(2);
+        }
+        if (normalized.startsWith("0") && normalized.length >= 9) {
+          normalized = normalized.slice(1);
+        }
+        if (normalized.length === 8 && /^[689]/.test(normalized)) {
+          return { ok: true };
+        }
+        return invalid("Enter a valid Singapore mobile number (8 digits, starting with 6, 8, or 9).");
       }
       default: {
         if (normalized.length >= 7) {
@@ -316,7 +329,7 @@ function Content() {
   return (
     <div className="min-h-screen bg-[#D9DED7] text-zinc-900">
       <header className="mx-auto w-full max-w-3xl px-6 py-10">
-        <h1 className="text-3xl font-semibold tracking-tight">Hotel Pre-Check-In</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Grand Marina Hotel Pre-Check-In</h1>
         <p className="mt-2 text-sm text-zinc-700">Skip the desk. Finish essentials before you arrive.</p>
         <ol className="mt-4 flex flex-wrap items-center gap-2 text-xs text-zinc-700">
           <li className={`rounded-full px-2 py-1 ${fullName && email && phone && bookingRef && arrival && country ? "bg-zinc-900 text-white" : "bg-zinc-400/60"}`}>1 • Details</li>
@@ -403,7 +416,7 @@ function Content() {
                     const validation = validatePhoneNumber(phone, country);
                     setPhoneError(validation.ok ? "" : validation.message || "Enter a valid phone number.");
                   }}
-                  placeholder="+1 555 123 4567"
+                  placeholder="+65 6123 4567"
                   readOnly={isPrefilled}
                   aria-readonly={isPrefilled}
                   aria-invalid={!!phoneError}

@@ -22,7 +22,7 @@ function Content() {
     const nights = params.get("nights") ?? "3";
     const room = params.get("room") ?? "Family Suite";
     const guests = params.get("guests") ?? "4";
-    const country = params.get("country") ?? "USA";
+    const country = params.get("country") ?? "Singapore";
     const email = params.get("email") ?? "john.doe@example.com";
     const phone = params.get("phone") ?? "+1 555 123 4567";
     
@@ -63,14 +63,14 @@ function Content() {
     <div className="min-h-screen bg-[#D9DED7] text-zinc-900">
       <main className="mx-auto w-full max-w-2xl px-6 py-10">
         <div className="rounded-2xl border border-transparent bg-white p-6 shadow-sm">
-          {/* Novotel Header */}
+          {/* Grand Marina Hotel Header */}
           <div className="mb-4 flex items-center gap-3 border-b border-zinc-200 pb-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#5E0F8B] text-white font-bold text-lg">
-              N
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-white font-bold text-lg">
+              G
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#5E0F8B]">NOVATAL</p>
-              <p className="text-xs text-zinc-500">checkin@novatal.com</p>
+              <p className="text-sm font-semibold text-blue-600">Grand Marina Hotel</p>
+              <p className="text-xs text-zinc-500">checkin@grandmarina.com</p>
             </div>
           </div>
           <h1 className="text-xl font-semibold">Your family reservation is confirmed!</h1>
@@ -113,7 +113,7 @@ function Content() {
             <div className="space-y-2">
               {data.guestNames.map((guestName, index) => (
                 <div key={index} className="flex items-center gap-2 bg-white rounded-md px-3 py-2">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#5E0F8B] text-white flex items-center justify-center text-xs font-semibold">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-semibold">
                     {index + 1}
                   </div>
                   <span className="text-sm text-zinc-900">{guestName}</span>
@@ -143,7 +143,7 @@ function Content() {
             <div className="sticky bottom-4 mt-4 flex justify-end">
               <a
                 href={`/?${data.prefillParams}`}
-                className="inline-flex items-center rounded-md bg-[#5E0F8B] px-4 py-2 text-sm font-medium text-white shadow hover:bg-[#4A0B6E]"
+                className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700"
               >
                 Complete Pre-Check-In for All Guests
               </a>
@@ -177,11 +177,12 @@ function Content() {
           </div>
 
           <p className="mt-4 text-xs text-zinc-500">
-            Questions? Contact us at <span className="font-medium">+1 (555) 123-4567</span> or <span className="font-medium">guestservices@novatal.com</span>
+            Questions? Contact us at <span className="font-medium">+65 6123 4567</span> or <span className="font-medium">guestservices@grandmarina.com</span>
           </p>
         </div>
       </main>
     </div>
   );
 }
+
 

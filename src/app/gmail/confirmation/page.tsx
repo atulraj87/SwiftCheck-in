@@ -19,7 +19,7 @@ function Content() {
   const arrival = params.get("arrival") ?? "2024-03-15";
   const email = params.get("email") ?? "jane.doe@example.com";
   const qrValue = JSON.stringify({ ref, name, arrival });
-  const wifiNetwork = ref !== "—" ? `NOVATAL-${ref.slice(-4).padStart(4, "0")}` : null;
+  const wifiNetwork = ref !== "—" ? `GRANDMARINA-${ref.slice(-4).padStart(4, "0")}` : null;
   const wifiPassword = ref !== "—" ? `${ref.toUpperCase()}2024` : null;
 
   return (
@@ -210,7 +210,7 @@ function Content() {
 
                   <div className="border-t border-gray-200 pt-4 mt-6">
                     <p className="text-xs text-gray-600">
-                      If you have any questions, please contact us at <a href="mailto:support@hotel.com" className="text-blue-600 hover:underline">support@hotel.com</a> or call +1 (555) 123-4567.
+                      If you have any questions, please contact us at <a href="mailto:support@grandmarina.com" className="text-blue-600 hover:underline">support@grandmarina.com</a> or call +65 6123 4567.
                     </p>
                     <p className="text-xs text-gray-500 mt-2">
                       We look forward to welcoming you!
@@ -225,4 +225,5 @@ function Content() {
     </div>
   );
 }
+
 

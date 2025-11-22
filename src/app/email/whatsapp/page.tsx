@@ -27,7 +27,7 @@ function Content() {
     const nextDay = new Date();
     nextDay.setDate(nextDay.getDate() + 1);
     const arrival = params.get("arrival") ?? nextDay.toISOString().slice(0, 10);
-    const country = params.get("country") ?? "India";
+    const country = params.get("country") ?? "Singapore";
     const email = params.get("email") ?? "jane@example.com";
     const phone = params.get("phone") ?? "+91 90000 00000";
     const prefillParams = new URLSearchParams({
@@ -71,7 +71,7 @@ function Content() {
                 N
               </div>
               <div className="flex-1 text-white">
-                <p className="text-sm font-semibold">NOVATAL Hotel</p>
+                <p className="text-sm font-semibold">Grand Marina Hotel</p>
                 <p className="text-xs text-green-100">online</p>
               </div>
             </div>
@@ -142,7 +142,7 @@ function Content() {
           <h2 className="mb-4 text-sm font-semibold">SMS / Text Message Format</h2>
           <div className="rounded-lg border border-zinc-200 bg-white p-4 font-mono text-xs">
             <div className="space-y-1 text-zinc-700">
-              <p className="text-zinc-500">From: NOVATAL</p>
+              <p className="text-zinc-500">From: Grand Marina Hotel</p>
               <p className="mt-2">Hi {data.name}! Complete pre-check-in for booking {data.ref}. Arrival: {new Date(data.arrival).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>
               <p className="mt-2 break-all">
                 {origin ? (
@@ -161,7 +161,7 @@ function Content() {
         <div className="mt-6 text-center">
           <a
             href={`/?${data.prefillParams}`}
-            className="inline-flex items-center rounded-md bg-[#5E0F8B] px-6 py-3 text-sm font-medium text-white hover:bg-[#4A0B6E]"
+            className="inline-flex items-center rounded-md bg-blue-600 px-6 py-3 text-sm font-medium text-white hover:bg-blue-700"
           >
             Test Pre-Check-In Link →
           </a>
