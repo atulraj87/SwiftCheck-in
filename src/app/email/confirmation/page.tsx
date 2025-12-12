@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { QRCodeCanvas as QRCode } from "qrcode.react";
+import { buildQrPayload, getParam, getWifiCredentials } from "@/lib/demoUtils";
 
 export default function ConfirmationEmailPage() {
   return (
@@ -14,12 +15,11 @@ export default function ConfirmationEmailPage() {
 
 function Content() {
   const params = useSearchParams();
-  const name = params.get("name") ?? "Guest";
-  const ref = params.get("ref") ?? "—";
-  const arrival = params.get("arrival") ?? "—";
-  const qrValue = JSON.stringify({ ref, name, arrival });
-  const wifiNetwork = ref !== "—" ? `GRANDMARINA-${ref.slice(-4).padStart(4, "0")}` : null;
-  const wifiPassword = ref !== "—" ? `${ref.toUpperCase()}2024` : null;
+  const name = getParam(params, "name", "Guest");
+  const ref = getParam(params, "ref", "—");
+  const arrival = getParam(params, "arrival", "—");
+  const qrValue = buildQrPayload({ ref, name, arrival });
+  const wifi = getWifiCredentials(ref);
   const supportContacts = [
     { label: "🔑 Lost or locked out?", ext: "Ext. 101" },
     { label: "🌡️ Room temperature issues?", ext: "Ext. 205" },
@@ -52,17 +52,17 @@ function Content() {
             </div>
           </div>
 
-          {wifiNetwork && wifiPassword && (
+          {wifi && (
             <div className="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
               <p className="text-xs font-medium">📶 Your Wi-Fi credentials</p>
               <div className="mt-2 rounded-md bg-white px-2 py-1.5 font-mono text-xs">
                 <div className="flex items-center justify-between border-b border-zinc-200 pb-1">
                   <span className="text-zinc-600">Network:</span>
-                  <span className="font-semibold text-zinc-900">{wifiNetwork}</span>
+                  <span className="font-semibold text-zinc-900">{wifi.network}</span>
                 </div>
                 <div className="mt-1 flex items-center justify-between">
                   <span className="text-zinc-600">Password:</span>
-                  <span className="font-semibold text-zinc-900">{wifiPassword}</span>
+                  <span className="font-semibold text-zinc-900">{wifi.password}</span>
                 </div>
               </div>
             </div>

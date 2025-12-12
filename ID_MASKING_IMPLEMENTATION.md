@@ -18,7 +18,6 @@ This implementation provides a secure, generic masking facility for government-a
 
 1. **`src/lib/idMasking.ts`** - Core masking utility with configuration
 2. **`src/lib/__tests__/idMasking.test.ts`** - Comprehensive unit tests
-3. **`src/lib/__examples__/uploadHandlerExample.ts`** - Integration examples
 4. **`vitest.config.ts`** - Test configuration
 
 ### Modified Files
@@ -240,8 +239,9 @@ export function maskAadhaar(aadhaar = ""): string {
 
 1. Install dependencies: `npm install`
 2. Run tests: `npm test`
-3. Review integration examples in `src/lib/__examples__/uploadHandlerExample.ts`
-4. Extend with additional ID types as needed
+3. Extend with additional ID types as needed
+
+
 
 
 

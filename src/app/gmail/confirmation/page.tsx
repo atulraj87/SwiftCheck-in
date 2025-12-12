@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { QRCodeCanvas as QRCode } from "qrcode.react";
+import { buildQrPayload, getParam, getWifiCredentials } from "@/lib/demoUtils";
 
 export default function GmailConfirmationPage() {
   return (
@@ -14,13 +15,12 @@ export default function GmailConfirmationPage() {
 
 function Content() {
   const params = useSearchParams();
-  const name = params.get("name") ?? "Jane Doe";
-  const ref = params.get("ref") ?? "BK123456";
-  const arrival = params.get("arrival") ?? "2024-03-15";
-  const email = params.get("email") ?? "jane.doe@example.com";
-  const qrValue = JSON.stringify({ ref, name, arrival });
-  const wifiNetwork = ref !== "—" ? `GRANDMARINA-${ref.slice(-4).padStart(4, "0")}` : null;
-  const wifiPassword = ref !== "—" ? `${ref.toUpperCase()}2024` : null;
+  const name = getParam(params, "name", "Jane Doe");
+  const ref = getParam(params, "ref", "BK123456");
+  const arrival = getParam(params, "arrival", "2024-03-15");
+  const email = getParam(params, "email", "jane.doe@example.com");
+  const qrValue = buildQrPayload({ ref, name, arrival });
+  const wifi = getWifiCredentials(ref);
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -192,17 +192,17 @@ function Content() {
                     <li>Receive your room key and enjoy your stay!</li>
                   </ol>
 
-                  {wifiNetwork && wifiPassword && (
+                  {wifi && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                       <h3 className="text-sm font-semibold text-blue-900 mb-2">📶 Your Wi-Fi Credentials</h3>
                       <div className="bg-white rounded-md p-3 font-mono text-xs">
                         <div className="flex justify-between items-center border-b border-gray-200 pb-2 mb-2">
                           <span className="text-gray-600">Network:</span>
-                          <span className="font-semibold text-gray-900">{wifiNetwork}</span>
+                          <span className="font-semibold text-gray-900">{wifi.network}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-gray-600">Password:</span>
-                          <span className="font-semibold text-gray-900">{wifiPassword}</span>
+                          <span className="font-semibold text-gray-900">{wifi.password}</span>
                         </div>
                       </div>
                     </div>

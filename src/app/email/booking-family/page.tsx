@@ -2,6 +2,8 @@
 
 import { Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
+import { buildPrefillParams, getArrivalParam, getParam } from "@/lib/demoUtils";
+import { GrandMarinaHeader } from "@/components/GrandMarinaHeader";
 
 export default function FamilyBookingEmailPage() {
   return (
@@ -14,17 +16,15 @@ export default function FamilyBookingEmailPage() {
 function Content() {
   const params = useSearchParams();
   const data = useMemo(() => {
-    const name = params.get("name") ?? "John Doe";
-    const ref = params.get("ref") ?? "BK789012";
-    const nextDay = new Date();
-    nextDay.setDate(nextDay.getDate() + 1);
-    const arrival = params.get("arrival") ?? nextDay.toISOString().slice(0, 10);
-    const nights = params.get("nights") ?? "3";
-    const room = params.get("room") ?? "Family Suite";
-    const guests = params.get("guests") ?? "4";
-    const country = params.get("country") ?? "Singapore";
-    const email = params.get("email") ?? "john.doe@example.com";
-    const phone = params.get("phone") ?? "+1 555 123 4567";
+    const name = getParam(params, "name", "John Doe");
+    const ref = getParam(params, "ref", "BK789012");
+    const arrival = getArrivalParam(params, 1);
+    const nights = getParam(params, "nights", "3");
+    const room = getParam(params, "room", "Family Suite");
+    const guests = getParam(params, "guests", "4");
+    const country = getParam(params, "country", "Singapore");
+    const email = getParam(params, "email", "john.doe@example.com");
+    const phone = getParam(params, "phone", "+1 555 123 4567");
     
     // Parse guest names if provided, otherwise generate defaults
     const guestNamesParam = params.get("guestNames");
@@ -32,8 +32,7 @@ function Content() {
       ? guestNamesParam.split(",")
       : ["John Doe", "Jane Doe", "Emma Doe", "Lucas Doe"].slice(0, parseInt(guests, 10));
     
-    const prefillParams = new URLSearchParams({
-      prefill: "1",
+    const prefillParams = buildPrefillParams({
       name,
       ref,
       arrival,
@@ -42,7 +41,7 @@ function Content() {
       phone,
       guests,
       guestNames: guestNames.join(","),
-    }).toString();
+    });
     
     return { 
       name, 
@@ -63,16 +62,7 @@ function Content() {
     <div className="min-h-screen bg-[#D9DED7] text-zinc-900">
       <main className="mx-auto w-full max-w-2xl px-6 py-10">
         <div className="rounded-2xl border border-transparent bg-white p-6 shadow-sm">
-          {/* Grand Marina Hotel Header */}
-          <div className="mb-4 flex items-center gap-3 border-b border-zinc-200 pb-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-white font-bold text-lg">
-              G
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-blue-600">Grand Marina Hotel</p>
-              <p className="text-xs text-zinc-500">checkin@grandmarina.com</p>
-            </div>
-          </div>
+          <GrandMarinaHeader />
           <h1 className="text-xl font-semibold">Your family reservation is confirmed!</h1>
           <p className="mt-1 text-sm text-zinc-600">Dear {data.name}, we look forward to welcoming your family.</p>
 

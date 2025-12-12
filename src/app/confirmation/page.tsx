@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { QRCodeCanvas as QRCode } from "qrcode.react";
 import { hmacHex } from "@/lib/hmac";
 import { maskID } from "@/lib/idMasking";
+import { buildQrPayload, getParam, getWifiCredentials } from "@/lib/demoUtils";
 
 export default function ConfirmationPage() {
   return (
@@ -17,22 +18,21 @@ export default function ConfirmationPage() {
 function Content() {
   const params = useSearchParams();
   const router = useRouter();
-  const name = params.get("name") ?? "Guest";
-  const ref = params.get("ref") ?? "—";
-  const arrival = params.get("arrival") ?? "—";
+  const name = getParam(params, "name", "Guest");
+  const ref = getParam(params, "ref", "—");
+  const arrival = getParam(params, "arrival", "—");
   const uploaded = typeof window !== "undefined" ? sessionStorage.getItem("uploadedIdName") : null;
   const maskedSummary = typeof window !== "undefined" ? sessionStorage.getItem("maskedIdSummary") : null;
   const maskedIdType = typeof window !== "undefined" ? sessionStorage.getItem("maskedIdType") : null;
   const safeMaskedSummary =
     maskedIdType && maskedSummary ? maskID(maskedIdType, maskedSummary) : maskedSummary;
   const [qrValue, setQrValue] = useState("{}");
-  const wifiNetwork = ref && ref !== "—" ? `GRANDMARINA-${ref.slice(-4).padStart(4, "0")}` : null;
-  const wifiPassword = ref && ref !== "—" ? `${ref.toUpperCase()}2024` : null;
+  const wifi = getWifiCredentials(ref);
   useEffect(() => {
     async function build() {
-      const payload = JSON.stringify({ ref, name, arrival });
+      const payload = buildQrPayload({ ref, name, arrival });
       const sig = await hmacHex(payload, "demo-secret");
-      setQrValue(JSON.stringify({ ref, name, arrival, sig }));
+      setQrValue(buildQrPayload({ ref, name, arrival, sig }));
     }
     build();
   }, [ref, name, arrival]);
@@ -105,10 +105,10 @@ function Content() {
           <p className="mt-2 text-sm text-zinc-700">
             We just emailed your Wi-Fi credentials and quick support contacts so you can keep them handy during your stay.
           </p>
-          {wifiNetwork && wifiPassword && (
+          {wifi && (
             <p className="mt-3 text-xs text-zinc-600">
               Look for an email titled <span className="font-semibold text-zinc-800">“Your pre-check-in is confirmed”</span> — it includes the
-              network <span className="font-mono text-zinc-900">{wifiNetwork}</span>, the password <span className="font-mono text-zinc-900">{wifiPassword}</span>, and all the helpful extensions.
+              network <span className="font-mono text-zinc-900">{wifi.network}</span>, the password <span className="font-mono text-zinc-900">{wifi.password}</span>, and all the helpful extensions.
             </p>
           )}
         </div>

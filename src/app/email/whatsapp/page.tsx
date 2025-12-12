@@ -2,6 +2,7 @@
 
 import { Suspense, useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import { buildPrefillParams, getArrivalParam, getParam } from "@/lib/demoUtils";
 
 export default function WhatsAppMessagePage() {
   return (
@@ -22,23 +23,13 @@ function Content() {
   }, []);
 
   const data = useMemo(() => {
-    const name = params.get("name") ?? "Jane Doe";
-    const ref = params.get("ref") ?? "ABC1234";
-    const nextDay = new Date();
-    nextDay.setDate(nextDay.getDate() + 1);
-    const arrival = params.get("arrival") ?? nextDay.toISOString().slice(0, 10);
-    const country = params.get("country") ?? "Singapore";
-    const email = params.get("email") ?? "jane@example.com";
-    const phone = params.get("phone") ?? "+91 90000 00000";
-    const prefillParams = new URLSearchParams({
-      prefill: "1",
-      name,
-      ref,
-      arrival,
-      country,
-      email,
-      phone,
-    }).toString();
+    const name = getParam(params, "name", "Jane Doe");
+    const ref = getParam(params, "ref", "ABC1234");
+    const arrival = getArrivalParam(params, 1);
+    const country = getParam(params, "country", "Singapore");
+    const email = getParam(params, "email", "jane@example.com");
+    const phone = getParam(params, "phone", "+91 90000 00000");
+    const prefillParams = buildPrefillParams({ name, ref, arrival, country, email, phone });
     return { name, ref, arrival, country, email, phone, prefillParams };
   }, [params]);
 
