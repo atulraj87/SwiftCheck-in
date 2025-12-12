@@ -96,25 +96,12 @@ export async function ocrTextFromFile(file: File): Promise<OcrResult> {
 
 export async function validateIdContent(file: File, idType: string): Promise<IdValidationResult> {
   const { text, confidence, words } = await ocrTextFromFile(file);
-  
-  // Pattern checks for various ID types
   const hasMrz = /P</.test(text) && /<{5,}/.test(text);
   const hasAadhaar = /\b\d{4}\s?\d{4}\s?\d{4}\b/.test(text);
-  const hasEmiratesId = /\b784-?\d{4}-?\d{7}-?\d\b/.test(text);
+  const hasEmiratesId = /\b784-\d{4}-\d{7}-\d\b/.test(text);
   const hasDriverWords = /\bDRIVER\b|\bLICENCE\b|\bLICENSE\b/.test(text);
   const hasStateId = /\bSTATE\b.*\bID\b|\bID\b.*\bSTATE\b/.test(text);
   const hasBrp = /\bRESIDENCE PERMIT\b|\bBRP\b/.test(text);
-  const hasNRIC = /\b[STFG]\d{7}[A-Z]\b/.test(text);
-  const hasPAN = /\b[A-Z]{5}\d{4}[A-Z]\b/.test(text);
-  const hasChinaId = /\b\d{18}\b/.test(text);
-  const hasKoreanId = /\b\d{6}-?\d{7}\b/.test(text);
-  const hasMyNumber = /\b\d{12}\b/.test(text);
-  const hasMedicareCard = /\b\d{10}\b/.test(text);
-  const hasSSN = /\b\d{3}-?\d{2}-?\d{4}\b/.test(text);
-  const hasSIN = /\b\d{3}-?\d{3}-?\d{3}\b/.test(text);
-  const hasCPF = /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/.test(text);
-  const hasDNI = /\b\d{7,8}[A-Z]?\b/.test(text);
-  const hasCURP = /\b[A-Z]{4}\d{6}[HM][A-Z]{5}\d{2}\b/.test(text);
 
   let ok = false;
   switch (idType) {
@@ -137,43 +124,6 @@ export async function validateIdContent(file: File, idType: string): Promise<IdV
     case "BRP":
       ok = hasBrp;
       break;
-    case "NRIC":
-      ok = hasNRIC;
-      break;
-    case "PAN Card":
-      ok = hasPAN;
-      break;
-    case "China ID":
-      ok = hasChinaId;
-      break;
-    case "Korean ID":
-      ok = hasKoreanId;
-      break;
-    case "My Number":
-      ok = hasMyNumber;
-      break;
-    case "Medicare Card":
-      ok = hasMedicareCard;
-      break;
-    case "Social Security Number":
-      ok = hasSSN;
-      break;
-    case "Social Insurance Number":
-      ok = hasSIN;
-      break;
-    case "CPF":
-      ok = hasCPF;
-      break;
-    case "DNI":
-      ok = hasDNI;
-      break;
-    case "CURP":
-      ok = hasCURP;
-      break;
-    case "EU National ID":
-      // Generic EU ID - check for common words
-      ok = /\bIDENTITY\b|\bNATIONAL\b|\bCARD\b/.test(text);
-      break;
     default:
       ok = false;
   }
@@ -182,7 +132,6 @@ export async function validateIdContent(file: File, idType: string): Promise<IdV
     return { ok: true, extractedText: text, words };
   }
 
-  // Fallback hints for various ID types
   const typeHints: Record<string, RegExp> = {
     Aadhaar: /\bAADHAAR\b|\bUIDAI\b|\bUNIQUE IDENTIFICATION\b/,
     Passport: /\bPASSPORT\b|\bREPUBLIC\b|\bP</,
@@ -191,18 +140,6 @@ export async function validateIdContent(file: File, idType: string): Promise<IdV
     "Driver License": /\bDRIV(?:ER|ING)\b|\bLICEN[SC]E\b/,
     "State ID": /\bSTATE\b(?:\s+|\b).*?\bID\b|\bIDENTIFICATION\b/,
     BRP: /\bRESIDENCE\b|\bPERMIT\b|\bBRP\b/,
-    NRIC: /\bNRIC\b|\bSINGAPORE\b/,
-    "PAN Card": /\bPAN\b|\bINCOME TAX\b|\bINDIA\b/,
-    "China ID": /\bCHINA\b|\bRESIDENT\b|\b中华人民共和国\b/,
-    "Korean ID": /\bKOREA\b|\bRESIDENT\b|\b주민등록증\b/,
-    "My Number": /\bMY NUMBER\b|\bマイナンバー\b|\bJAPAN\b/,
-    "Medicare Card": /\bMEDICARE\b|\bAUSTRALIA\b/,
-    "Social Security Number": /\bSOCIAL SECURITY\b|\bSSN\b/,
-    "Social Insurance Number": /\bSOCIAL INSURANCE\b|\bSIN\b|\bCANADA\b/,
-    CPF: /\bCPF\b|\bBRAZIL\b|\bBRASIL\b/,
-    DNI: /\bDNI\b|\bDOCUMENTO NACIONAL\b/,
-    CURP: /\bCURP\b|\bMEXICO\b|\bMÉXICO\b/,
-    "EU National ID": /\bIDENTITY\b|\bNATIONAL\b|\bCARD\b/,
   };
 
   const normalizedText = text.replace(/\s+/g, " ");

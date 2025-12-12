@@ -89,23 +89,10 @@ function Content() {
 
   const countryToIdTypes: Record<string, string[]> = {
     Singapore: ["Passport", "NRIC", "Driving Licence"],
-    India: ["Aadhaar", "Passport", "PAN Card", "Driving Licence"],
-    USA: ["Passport", "Driver License", "State ID", "Social Security Number"],
+    India: ["Aadhaar", "Passport", "Driving Licence"],
+    USA: ["Passport", "Driver License", "State ID"],
     UAE: ["Emirates ID", "Passport", "Driving Licence"],
     UK: ["Passport", "Driving Licence", "BRP"],
-    China: ["Passport", "China ID"],
-    "South Korea": ["Passport", "Korean ID", "Driving Licence"],
-    Japan: ["Passport", "My Number", "Driving Licence"],
-    Australia: ["Passport", "Medicare Card", "Driving Licence"],
-    Canada: ["Passport", "Social Insurance Number", "Driving Licence"],
-    Brazil: ["Passport", "CPF", "Driving Licence"],
-    Spain: ["Passport", "DNI", "Driving Licence"],
-    Argentina: ["Passport", "DNI", "Driving Licence"],
-    Mexico: ["Passport", "CURP", "Driving Licence"],
-    France: ["Passport", "EU National ID", "Driving Licence"],
-    Germany: ["Passport", "EU National ID", "Driving Licence"],
-    Italy: ["Passport", "EU National ID", "Driving Licence"],
-    Netherlands: ["Passport", "EU National ID", "Driving Licence"],
   };
   const idOptions = country ? countryToIdTypes[country] ?? ["Passport"] : [];
 
@@ -1135,7 +1122,7 @@ function maskPersonalInformation(
   const nameIndicators = [
     "NAME", "NOMBRE", "NOM", "NOME", "NAMA", 
     "GIVEN", "SURNAME", "FAMILY", "FIRST", "LAST",
-    "HOLDER", "BEARER", "TITULAR"
+    "HOLDER", "BEARER", "TITULAR", "नाम"
   ];
 
   // Define date of birth indicators
