@@ -89,10 +89,23 @@ function Content() {
 
   const countryToIdTypes: Record<string, string[]> = {
     Singapore: ["Passport", "NRIC", "Driving Licence"],
-    India: ["Aadhaar", "Passport", "Driving Licence"],
-    USA: ["Passport", "Driver License", "State ID"],
+    India: ["Aadhaar", "Passport", "PAN Card", "Driving Licence"],
+    USA: ["Passport", "Driver License", "State ID", "Social Security Number"],
     UAE: ["Emirates ID", "Passport", "Driving Licence"],
     UK: ["Passport", "Driving Licence", "BRP"],
+    China: ["Passport", "China ID"],
+    "South Korea": ["Passport", "Korean ID", "Driving Licence"],
+    Japan: ["Passport", "My Number", "Driving Licence"],
+    Australia: ["Passport", "Medicare Card", "Driving Licence"],
+    Canada: ["Passport", "Social Insurance Number", "Driving Licence"],
+    Brazil: ["Passport", "CPF", "Driving Licence"],
+    Spain: ["Passport", "DNI", "Driving Licence"],
+    Argentina: ["Passport", "DNI", "Driving Licence"],
+    Mexico: ["Passport", "CURP", "Driving Licence"],
+    France: ["Passport", "EU National ID", "Driving Licence"],
+    Germany: ["Passport", "EU National ID", "Driving Licence"],
+    Italy: ["Passport", "EU National ID", "Driving Licence"],
+    Netherlands: ["Passport", "EU National ID", "Driving Licence"],
   };
   const idOptions = country ? countryToIdTypes[country] ?? ["Passport"] : [];
 
@@ -1105,6 +1118,144 @@ function extractIdNumber(
   return null;
 }
 
+/**
+ * Masks personal information (names, dates of birth) on ID documents
+ * Applies to all ID types from different countries
+ */
+function maskPersonalInformation(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  words: OcrWord[],
+  idType: string,
+  extractedText?: string
+) {
+  if (!words.length || !extractedText) return;
+
+  // Define common name indicators across different countries and languages
+  const nameIndicators = [
+    "NAME", "NOMBRE", "NOM", "NOME", "NAMA", 
+    "GIVEN", "SURNAME", "FAMILY", "FIRST", "LAST",
+    "HOLDER", "BEARER", "TITULAR"
+  ];
+
+  // Define date of birth indicators
+  const dobIndicators = [
+    "BIRTH", "BORN", "DOB", "D.O.B", "DATE OF BIRTH",
+    "NACIMIENTO", "NAISSANCE", "NASCIMENTO", "LAHIR",
+    "जन्म", "वर्ष", "YEAR"
+  ];
+
+  // Mask names: Find words that follow name indicators
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    const text = word.text?.toUpperCase() || "";
+    
+    // Check if this word is a name indicator
+    const isNameIndicator = nameIndicators.some(indicator => 
+      text.includes(indicator) || indicator.includes(text)
+    );
+
+    if (isNameIndicator) {
+      // Mask the next 2-4 words (likely the person's name)
+      for (let j = i + 1; j < Math.min(i + 5, words.length); j++) {
+        const nameWord = words[j];
+        const nameText = nameWord.text?.trim() || "";
+        
+        // Skip if it's a short connector word, number, or another indicator
+        if (nameText.length <= 2 || /^\d+$/.test(nameText)) continue;
+        if (nameIndicators.some(ind => nameText.toUpperCase().includes(ind))) break;
+        if (dobIndicators.some(ind => nameText.toUpperCase().includes(ind))) break;
+        
+        // This is likely a name component - mask it
+        const maskArea: MaskBox = {
+          x: Math.max(0, nameWord.bbox.x0 - 4),
+          y: Math.max(0, nameWord.bbox.y0 - 2),
+          width: Math.max(1, nameWord.bbox.x1 - nameWord.bbox.x0 + 8),
+          height: Math.max(1, nameWord.bbox.y1 - nameWord.bbox.y0 + 4),
+        };
+        
+        // Cover with white background and draw "XXXX"
+        ctx.save();
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(maskArea.x, maskArea.y, maskArea.width, maskArea.height);
+        
+        const fontSize = Math.max(maskArea.height * 0.7, 14);
+        ctx.font = `bold ${fontSize}px "Segoe UI", Arial, sans-serif`;
+        ctx.fillStyle = "#000000";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("XXXX", maskArea.x + maskArea.width / 2, maskArea.y + maskArea.height / 2);
+        ctx.restore();
+      }
+    }
+  }
+
+  // Mask dates of birth: Find 4-digit years near DOB indicators
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    const text = word.text?.toUpperCase() || "";
+    
+    // Check if this word is a DOB indicator
+    const isDobIndicator = dobIndicators.some(indicator => 
+      text.includes(indicator) || indicator.includes(text)
+    );
+
+    if (isDobIndicator) {
+      // Look for 4-digit years in nearby words (within next 10 words)
+      for (let j = i; j < Math.min(i + 11, words.length); j++) {
+        const dateWord = words[j];
+        const dateText = dateWord.text?.trim() || "";
+        
+        // Check if this is a 4-digit year (19xx or 20xx)
+        if (/^(19|20)\d{2}$/.test(dateText)) {
+          const maskArea: MaskBox = {
+            x: Math.max(0, dateWord.bbox.x0 - 4),
+            y: Math.max(0, dateWord.bbox.y0 - 2),
+            width: Math.max(1, dateWord.bbox.x1 - dateWord.bbox.x0 + 8),
+            height: Math.max(1, dateWord.bbox.y1 - dateWord.bbox.y0 + 4),
+          };
+          
+          // Cover with white and draw "XXXX"
+          ctx.save();
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillRect(maskArea.x, maskArea.y, maskArea.width, maskArea.height);
+          
+          const fontSize = Math.max(maskArea.height * 0.7, 14);
+          ctx.font = `bold ${fontSize}px "Segoe UI", Arial, sans-serif`;
+          ctx.fillStyle = "#000000";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("XXXX", maskArea.x + maskArea.width / 2, maskArea.y + maskArea.height / 2);
+          ctx.restore();
+        }
+        
+        // Also check for dates with slashes or dashes that contain years
+        if (/\d{2}[\/\-]\d{2}[\/\-](19|20)\d{2}/.test(dateText)) {
+          const maskArea: MaskBox = {
+            x: Math.max(0, dateWord.bbox.x0 - 4),
+            y: Math.max(0, dateWord.bbox.y0 - 2),
+            width: Math.max(1, dateWord.bbox.x1 - dateWord.bbox.x0 + 8),
+            height: Math.max(1, dateWord.bbox.y1 - dateWord.bbox.y0 + 4),
+          };
+          
+          ctx.save();
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillRect(maskArea.x, maskArea.y, maskArea.width, maskArea.height);
+          
+          // Mask the year part
+          const fontSize = Math.max(maskArea.height * 0.7, 14);
+          ctx.font = `bold ${fontSize}px "Segoe UI", Arial, sans-serif`;
+          ctx.fillStyle = "#000000";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("XX/XX/XXXX", maskArea.x + maskArea.width / 2, maskArea.y + maskArea.height / 2);
+          ctx.restore();
+        }
+      }
+    }
+  }
+}
+
 async function createMaskedPreview(
   file: File,
   idType: string,
@@ -1119,12 +1270,34 @@ async function createMaskedPreview(
   if (!ctx) {
     throw new Error("Canvas not supported");
   }
-  // Simply copy the original image without any masking or watermark
+  
+  // Copy original image first
   ctx.drawImage(sourceCanvas, 0, 0);
+
+  // Apply masking based on ID type
+  const idInfo = extractIdNumber(idType, extractedText, words);
+  
+  if (idInfo) {
+    // Mask ID numbers
+    if (idType === "Aadhaar") {
+      // For Aadhaar, use comprehensive masking that finds all occurrences
+      maskNumberRegions(ctx, canvas, idInfo);
+      maskAadhaarFragments(ctx, canvas, words, {
+        originalDigits: idInfo.number,
+        excludeBoxes: idInfo.boxes,
+      });
+    } else {
+      // For other ID types, mask the ID number
+      maskNumberRegions(ctx, canvas, idInfo);
+    }
+  }
+  
+  // Mask names and dates of birth for all ID types
+  maskPersonalInformation(ctx, canvas, words, idType, extractedText);
 
   return {
     dataUrl: canvas.toDataURL("image/jpeg", 0.85),
-    summary: undefined,
+    summary: deriveMaskedSummary(idType, extractedText),
   };
 }
 
